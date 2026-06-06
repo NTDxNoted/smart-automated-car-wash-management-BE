@@ -21,6 +21,8 @@ builder.Services.AddScoped<IApplicationDbContext>(provider => provider.GetRequir
 
 // Nối IBookingService tới BookingService
 builder.Services.AddScoped<IBookingsService, BookingService>();
+builder.Services.AddScoped<IBookingValidationService, BookingValidationService>();
+builder.Services.AddScoped<IInvoiceService, InvoiceService>();
 
 // Nối AuthService và repository
 builder.Services.AddScoped<IAuthService, AuthService>();

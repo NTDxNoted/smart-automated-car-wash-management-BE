@@ -1,4 +1,5 @@
-﻿using AutoWash.Application.Interfaces;
+﻿using AutoWash.Application.DTOs;
+using AutoWash.Application.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 
 [ApiController]
@@ -34,7 +35,52 @@ public class BookingsController : ControllerBase
         return Ok(result);
     }
 
-    // 3. POST /api/bookings/{id}/cancel
+    // 3. POST /api/bookings
+    [HttpPost]
+    public async Task<IActionResult> CreateBooking([FromBody] CreateBookingRequest request)
+    {
+        try
+        {
+            var customerIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            int? customerId = customerIdClaim != null ? int.Parse(customerIdClaim) : null;
+
+            var result = await _bookingsService.CreateBookingAsync(request, customerId);
+            return CreatedAtAction(nameof(GetBookingById), new { id = result.BookingId }, result);
+        }
+        catch (Exception ex)
+        {
+            var message = ex.Message;
+            if (message.Contains("UNAUTHORIZED"))
+            {
+                return Unauthorized(new { error = "UNAUTHORIZED", message });
+            }
+
+            if (message.Contains("NOT_FOUND"))
+            {
+                return NotFound(new { error = "NOT_FOUND", message });
+            }
+
+            return UnprocessableEntity(new { error = GetBookingErrorCode(message), message });
+        }
+    }
+
+    private static string GetBookingErrorCode(string message)
+    {
+        return message.Split(':')[0] switch
+        {
+            "PENDING_QUOTA_EXCEEDED" => "PENDING_QUOTA_EXCEEDED",
+            "DAILY_INCOMPLETE_LIMIT_EXCEEDED" => "DAILY_INCOMPLETE_LIMIT_EXCEEDED",
+            "VEHICLE_BUFFER_VIOLATION" => "VEHICLE_BUFFER_VIOLATION",
+            "ADVANCE_NOTICE_VIOLATION" => "ADVANCE_NOTICE_VIOLATION",
+            "BOOKING_WINDOW_VIOLATION" => "BOOKING_WINDOW_VIOLATION",
+            "SLOT_NOT_AVAILABLE" => "SLOT_NOT_AVAILABLE",
+            "INVALID_PROMO_CODE" => "INVALID_PROMO_CODE",
+            "INVALID_REWARD" => "INVALID_REWARD",
+            _ => "BOOKING_VALIDATION_FAILED",
+        };
+    }
+
+    // 4. POST /api/bookings/{id}/cancel
     [HttpPost("{id}/cancel")]
     public async Task<IActionResult> CancelBooking(int id, [FromQuery] string? guestPhone = null)
     {

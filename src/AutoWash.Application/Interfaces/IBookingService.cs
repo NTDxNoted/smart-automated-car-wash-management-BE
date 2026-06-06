@@ -13,6 +13,6 @@ namespace AutoWash.Application.Interfaces
 
         // Hàm Cancel của bạn đã chuẩn rồi
         Task<CancelBookingResponseDto> CancelBookingAsync(int bookingId, int? customerId, string? guestPhone);
-        Task GetCustomerBookingsAsync(int customerId, string? status, int page, int pageSize);
+        Task<BookingResponse> CreateBookingAsync(CreateBookingRequest request, int? customerId);
     }
 }
