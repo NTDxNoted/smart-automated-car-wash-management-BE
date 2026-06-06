@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutoWash.Application", "..\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutoWash.Infrastructure", "..\AutoWash.Infrastructure\AutoWash.Infrastructure.csproj", "{988DC452-EBEA-4433-8198-F0712C961211}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutoWash.Tests", "..\AutoWash.Tests\AutoWash.Tests.csproj", "{867E257F-0EC2-4969-AF43-E7620D2D6A66}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -69,6 +71,18 @@ Global
 		{988DC452-EBEA-4433-8198-F0712C961211}.Release|x64.Build.0 = Release|Any CPU
 		{988DC452-EBEA-4433-8198-F0712C961211}.Release|x86.ActiveCfg = Release|Any CPU
 		{988DC452-EBEA-4433-8198-F0712C961211}.Release|x86.Build.0 = Release|Any CPU
+		{867E257F-0EC2-4969-AF43-E7620D2D6A66}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{867E257F-0EC2-4969-AF43-E7620D2D6A66}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{867E257F-0EC2-4969-AF43-E7620D2D6A66}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{867E257F-0EC2-4969-AF43-E7620D2D6A66}.Debug|x64.Build.0 = Debug|Any CPU
+		{867E257F-0EC2-4969-AF43-E7620D2D6A66}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{867E257F-0EC2-4969-AF43-E7620D2D6A66}.Debug|x86.Build.0 = Debug|Any CPU
+		{867E257F-0EC2-4969-AF43-E7620D2D6A66}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{867E257F-0EC2-4969-AF43-E7620D2D6A66}.Release|Any CPU.Build.0 = Release|Any CPU
+		{867E257F-0EC2-4969-AF43-E7620D2D6A66}.Release|x64.ActiveCfg = Release|Any CPU
+		{867E257F-0EC2-4969-AF43-E7620D2D6A66}.Release|x64.Build.0 = Release|Any CPU
+		{867E257F-0EC2-4969-AF43-E7620D2D6A66}.Release|x86.ActiveCfg = Release|Any CPU
+		{867E257F-0EC2-4969-AF43-E7620D2D6A66}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

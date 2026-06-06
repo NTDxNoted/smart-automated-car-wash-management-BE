@@ -3,6 +3,8 @@ using AutoWash.Infrastructure;
 using AutoWash.Infrastructure.Data;
 using AutoWash.Application.Interfaces;
 using AutoWash.Application.Services;
+using AutoWash.Infrastructure.Repositories;
+using AutoWashPro.API.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,6 +21,12 @@ builder.Services.AddScoped<IApplicationDbContext>(provider => provider.GetRequir
 
 // Nối IBookingService tới BookingService
 builder.Services.AddScoped<IBookingsService, BookingService>();
+
+// Nối AuthService và repository
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<CustomerRepository>();
+
+builder.Services.AddAuthorization();
 var app = builder.Build();
 
 // 3. Kích hoạt giao diện Swagger khi đang code (Development)
@@ -28,6 +36,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseMiddleware<JwtMiddleware>();
 app.UseAuthorization();
 app.MapControllers();
 // Nút test kết nối Database
