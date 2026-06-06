@@ -1,6 +1,8 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using AutoWash.Infrastructure;
 using AutoWash.Infrastructure.Data;
+using AutoWash.Application.Interfaces;
+using AutoWash.Application.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,6 +14,11 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddInfrastructureServices(builder.Configuration);
+// Nối IApplicationDbContext tới ApplicationDbContext
+builder.Services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
+
+// Nối IBookingService tới BookingService
+builder.Services.AddScoped<IBookingService, BookingService>();
 var app = builder.Build();
 
 // 3. Kích hoạt giao diện Swagger khi đang code (Development)

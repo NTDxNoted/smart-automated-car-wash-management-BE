@@ -9,9 +9,9 @@ namespace AutoWash.Infrastructure
     {
         public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
         {
-            // Gom toàn bộ cấu hình Database về đây
             services.AddDbContext<ApplicationDbContext>(options =>
-                options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+                options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"))
+                       .UseLowerCaseNamingConvention()); 
 
             return services;
         }
