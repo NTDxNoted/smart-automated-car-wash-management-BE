@@ -16,4 +16,8 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\AutoWash.Infrastructure\AutoWash.Infrastructure.csproj" />
+  </ItemGroup>
+
 </Project>
