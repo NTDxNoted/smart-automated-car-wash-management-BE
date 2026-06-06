@@ -26,6 +26,12 @@ builder.Services.AddScoped<IBookingsService, BookingService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<CustomerRepository>();
 
+// ISSUE-04: Service & Rewards Catalog
+builder.Services.AddScoped<IServiceService, ServiceService>();
+builder.Services.AddScoped<IRewardService, RewardService>();
+builder.Services.AddScoped<ServiceRepository>();
+builder.Services.AddScoped<RewardRepository>();
+
 builder.Services.AddAuthorization();
 var app = builder.Build();
 
