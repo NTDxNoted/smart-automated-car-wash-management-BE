@@ -10,7 +10,7 @@ using AutoWash.Domain.Entities;
 
 namespace AutoWash.Application.Services
 {
-    public class BookingService : IBookingService
+    public class BookingService : IBookingsService
     {
         private readonly IApplicationDbContext _context;
         private readonly ILogger<BookingService> _logger;
@@ -21,15 +21,20 @@ namespace AutoWash.Application.Services
             _logger = logger;
         }
 
-        // --- TASK 1: DANH SÁCH BOOKING CÓ PHÂN TRANG ---
-        public async Task<PagedResponse<BookingResponseDto>> GetCustomerBookingsAsync(int customerId, string? status, int page, int pageSize)
+        // 1. GET DANH SÁCH (Phân trang & Filter)
+        public async Task<PagedResponse<BookingResponseDto>> GetCustomerBookingsAsync(int? customerId, string? guestPhone, string? status, int page, int pageSize)
         {
-            var query = _context.Bookings.Where(b => b.CustomerID == customerId).AsQueryable();
+            var query = _context.Bookings.AsQueryable();
+
+            if (customerId.HasValue)
+                query = query.Where(b => b.CustomerID == customerId.Value);
+            else if (!string.IsNullOrEmpty(guestPhone))
+                query = query.Where(b => b.Phone == guestPhone);
+            else
+                throw new Exception("UNAUTHORIZED: Cần cung cấp ID hoặc SĐT.");
 
             if (!string.IsNullOrEmpty(status) && Enum.TryParse<BookingStatus>(status, true, out var parsedStatus))
-            {
                 query = query.Where(b => b.Status == parsedStatus);
-            }
 
             var total = await query.CountAsync();
             var bookings = await query
@@ -40,26 +45,25 @@ namespace AutoWash.Application.Services
                 {
                     BookingId = b.BookingID,
                     LicensePlate = b.LicensePlate,
-                    // Giả định ServiceName sẽ được map qua navigation property
                     ServiceName = "Auto-mapped from Service entity",
                     ScheduledTime = b.ScheduledTime,
                     Status = b.Status.ToString(),
                     FinalAmount = b.FinalAmount,
                     PointsEarned = b.PointsEarned
-                })
-                .ToListAsync();
+                }).ToListAsync();
 
             return new PagedResponse<BookingResponseDto> { Page = page, Total = total, Data = bookings };
         }
 
-        // --- TASK 2: CHI TIẾT 1 BOOKING ---
-        public async Task<BookingResponseDto> GetBookingByIdAsync(int bookingId, int customerId)
+        // 2. GET CHI TIẾT
+        public async Task<BookingResponseDto> GetBookingByIdAsync(int bookingId, int? customerId, string? guestPhone)
         {
-            var booking = await _context.Bookings
-                .Where(b => b.BookingID == bookingId && b.CustomerID == customerId)
-                .FirstOrDefaultAsync();
+            var booking = await _context.Bookings.FirstOrDefaultAsync(b => b.BookingID == bookingId);
 
-            if (booking == null) throw new Exception("Không tìm thấy lịch đặt.");
+            if (booking == null) throw new Exception("NOT_FOUND: Không tìm thấy lịch đặt.");
+
+            if (customerId.HasValue && booking.CustomerID != customerId) throw new Exception("UNAUTHORIZED: Không có quyền truy cập.");
+            if (!customerId.HasValue && booking.Phone != guestPhone) throw new Exception("UNAUTHORIZED: Không có quyền truy cập.");
 
             return new BookingResponseDto
             {
@@ -72,73 +76,49 @@ namespace AutoWash.Application.Services
             };
         }
 
-        // --- TASK 3: LOGIC HỦY LỊCH (CORE ISSUE 07) ---
-        public async Task<CancelBookingResponseDto> CancelBookingAsync(int bookingId, int customerId)
+        // 3. CANCEL BOOKING
+        public async Task<CancelBookingResponseDto> CancelBookingAsync(int bookingId, int? customerId, string? guestPhone)
         {
-            var booking = await _context.Bookings
-                .FirstOrDefaultAsync(b => b.BookingID == bookingId && b.CustomerID == customerId);
+            var booking = await _context.Bookings.FirstOrDefaultAsync(b => b.BookingID == bookingId);
+            if (booking == null) throw new Exception("NOT_FOUND: Không tìm thấy lịch đặt.");
 
-            if (booking == null)
-                throw new Exception("NOT_FOUND: Không tìm thấy lịch đặt.");
-
-            // BR-64: Chỉ cho phép thao tác khi đơn đang Pending
-            if (booking.Status != BookingStatus.Pending)
-                throw new Exception("INVALID_STATUS: Đơn này không thể hủy vì không ở trạng thái Pending.");
-
-            // BR-63: Phải hủy trước giờ hẹn >= 2 tiếng
-            var hoursUntilSchedule = (booking.ScheduledTime - DateTime.UtcNow).TotalHours;
-            if (hoursUntilSchedule < 2)
-                throw new Exception("CANCEL_TOO_LATE: Chỉ được hủy trước giờ hẹn ít nhất 2 tiếng.");
-
-            // Bắt đầu quá trình hủy
-            booking.Status = BookingStatus.Cancelled;
-            int pointsRefunded = 0;
-
-            // BR-62: Logic hoàn điểm giữ nguyên ExpiredAt
-            if (booking.PointsRedeemed > 0)
+            // Xác thực quyền
+            if (customerId.HasValue)
             {
-                // Tìm lại giao dịch trừ điểm gốc
-                var originalTxn = await _context.PointTransactions
-                    .Where(pt => pt.RefBookingID == booking.BookingID && pt.Type == PointTransactionType.Redeem)
-                    .FirstOrDefaultAsync();
-
-                var loyaltyAccount = await _context.LoyaltyAccounts
-                    .FirstOrDefaultAsync(la => la.CustomerID == customerId);
-
-                if (loyaltyAccount != null && originalTxn != null)
-                {
-                    // Trả lại điểm vào ví
-                    loyaltyAccount.TotalPoints += booking.PointsRedeemed;
-                    loyaltyAccount.LastUpdated = DateTime.UtcNow;
-
-                    // Tạo lịch sử cộng điểm nhưng sao chép hạn sử dụng cũ
-                    var refundTxn = new PointTransaction
-                    {
-                        LoyaltyID = loyaltyAccount.LoyaltyID,
-                        Points = booking.PointsRedeemed,
-                        Type = PointTransactionType.Earn, // Hoàn lại như một khoản cộng vào
-                        RefBookingID = booking.BookingID,
-                        ExpiredAt = originalTxn.ExpiredAt, // Giữ nguyên hạn sử dụng gốc
-                        CreatedAt = DateTime.UtcNow
-                    };
-
-                    _context.PointTransactions.Add(refundTxn);
-                    pointsRefunded = booking.PointsRedeemed;
-                }
+                if (booking.CustomerID != customerId.Value)
+                    throw new Exception("UNAUTHORIZED: Bạn không có quyền hủy lịch này.");
+            }
+            else if (!string.IsNullOrEmpty(guestPhone))
+            {
+                if (booking.Phone != guestPhone)
+                    throw new Exception("UNAUTHORIZED: Số điện thoại không khớp với lịch đặt.");
+            }
+            else
+            {
+                throw new Exception("UNAUTHORIZED: Cần thông tin đăng nhập hoặc SĐT.");
             }
 
-            await _context.SaveChangesAsync();
+            // Check Status & Time
+            if (booking.Status != BookingStatus.Pending)
+                throw new Exception("INVALID_STATUS: Đơn này không thể hủy.");
 
-            // Trigger Notification Log
-            _logger.LogInformation($"[CANCEL_LOG] Khách hàng {customerId} đã hủy Booking {bookingId}. Số điểm hoàn lại: {pointsRefunded}");
+            if ((booking.ScheduledTime - DateTime.UtcNow).TotalHours < 2)
+                throw new Exception("CANCEL_TOO_LATE: Chỉ được hủy trước giờ hẹn 2 tiếng.");
+
+            booking.Status = BookingStatus.Cancelled;
+            await _context.SaveChangesAsync();
 
             return new CancelBookingResponseDto
             {
                 BookingId = booking.BookingID,
-                Status = booking.Status.ToString(),
-                PointsRefunded = pointsRefunded,
-                Message = $"Hủy lịch thành công. {pointsRefunded} điểm đã được hoàn trả."
+                Status = "Cancelled",
+                Message = "Hủy lịch thành công."
             };
+        }
+
+        public Task GetCustomerBookingsAsync(int customerId, string? status, int page, int pageSize)
+        {
+            throw new NotImplementedException();
         }
     }
 }

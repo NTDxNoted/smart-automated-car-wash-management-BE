@@ -18,7 +18,7 @@ builder.Services.AddInfrastructureServices(builder.Configuration);
 builder.Services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
 
 // Nối IBookingService tới BookingService
-builder.Services.AddScoped<IBookingService, BookingService>();
+builder.Services.AddScoped<IBookingsService, BookingService>();
 var app = builder.Build();
 
 // 3. Kích hoạt giao diện Swagger khi đang code (Development)
