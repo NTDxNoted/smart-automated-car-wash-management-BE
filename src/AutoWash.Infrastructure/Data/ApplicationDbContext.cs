@@ -11,27 +11,27 @@ namespace AutoWash.Infrastructure.Data
         {
         }
 
-        // Khai báo 3 bảng liên quan đến Issue 07
+        public DbSet<Customer> Customers { get; set; }
+        public DbSet<Vehicle> Vehicles { get; set; }
         public DbSet<Booking> Bookings { get; set; }
         public DbSet<LoyaltyAccount> LoyaltyAccounts { get; set; }
         public DbSet<PointTransaction> PointTransactions { get; set; }
 
-        // Ép Entity Framework lưu Enum dưới dạng chuỗi (String) thay vì số (Int)
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
 
-            // Chốt cứng tên bảng: Số ít và chữ thường (Đúng chuẩn PostgreSQL)
-            builder.Entity<Booking>().ToTable("booking");
-            builder.Entity<LoyaltyAccount>().ToTable("loyaltyaccount");
-            builder.Entity<PointTransaction>().ToTable("pointtransaction");
+            builder.Entity<Customer>().ToTable("customer").HasKey(c => c.CustomerID);
+            builder.Entity<Vehicle>().ToTable("vehicle").HasKey(v => v.VehicleID);
+            builder.Entity<Booking>().ToTable("booking").HasKey(b => b.BookingID);
+            builder.Entity<LoyaltyAccount>().ToTable("loyaltyaccount").HasKey(l => l.LoyaltyID);
+            builder.Entity<PointTransaction>().ToTable("pointtransaction").HasKey(p => p.PointTxnID);
 
-            // Khai báo Khóa chính
-            builder.Entity<Booking>().HasKey(b => b.BookingID);
-            builder.Entity<LoyaltyAccount>().HasKey(l => l.LoyaltyID);
-            builder.Entity<PointTransaction>().HasKey(p => p.PointTxnID);
+            // BR-09: UNIQUE (CustomerID, LicensePlate)
+            builder.Entity<Vehicle>()
+                .HasIndex(v => new { v.CustomerID, v.LicensePlate })
+                .IsUnique();
 
-            // Ép kiểu Enum
             builder.Entity<Booking>().Property(b => b.Status).HasConversion<string>();
             builder.Entity<PointTransaction>().Property(p => p.Type).HasConversion<string>();
         }
