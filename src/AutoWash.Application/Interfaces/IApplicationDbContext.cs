@@ -1,4 +1,4 @@
-﻿using AutoWash.Domain.Entities;
+﻿﻿using AutoWash.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
 using System.Threading;
@@ -13,7 +13,8 @@ namespace AutoWash.Application.Interfaces
         DbSet<PointTransaction> PointTransactions { get; }
         DbSet<Service> Services { get; }
         DbSet<RewardsCatalog> RewardsCatalog { get; }
-
+        DbSet<Customer> Customers { get; }
+        DbSet<Vehicle> Vehicles { get; }
         Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     }
 }
