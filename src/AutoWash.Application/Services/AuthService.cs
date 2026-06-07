@@ -29,25 +29,32 @@ namespace AutoWash.Application.Services
     {
       _context = context;
       _logger = logger;
-      _jwtSecret = configuration["Jwt:Secret"] ?? throw new InvalidOperationException("JWT secret is not configured.");
+
+      _jwtSecret = configuration["Jwt:Secret"]
+          ?? throw new InvalidOperationException("JWT secret is not configured.");
     }
 
+    // ================= REGISTER =================
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request)
     {
-      if (string.IsNullOrWhiteSpace(request.Phone) || string.IsNullOrWhiteSpace(request.Password) || string.IsNullOrWhiteSpace(request.FullName))
+      if (string.IsNullOrWhiteSpace(request.Phone) ||
+          string.IsNullOrWhiteSpace(request.Password) ||
+          string.IsNullOrWhiteSpace(request.FullName))
       {
         throw new AuthException("INVALID_REQUEST", "Thông tin đăng ký không hợp lệ.");
       }
 
-      if (await _context.Customers.AnyAsync(c => c.Phone == request.Phone.Trim()))
+      var phone = request.Phone.Trim();
+
+      if (await _context.Customers.AnyAsync(c => c.Phone == phone))
       {
-        throw new AuthException("PHONE_ALREADY_EXISTS", "Số điện thoại đã được đăng ký");
+        throw new AuthException("PHONE_EXISTS", "Số điện thoại đã tồn tại.");
       }
 
       var customer = new Customer
       {
         FullName = request.FullName.Trim(),
-        Phone = request.Phone.Trim(),
+        Phone = phone,
         PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
         TierID = 1,
         IsLocked = false,
@@ -57,6 +64,7 @@ namespace AutoWash.Application.Services
       _context.Customers.Add(customer);
       await _context.SaveChangesAsync();
 
+      // optional: loyalty
       _context.LoyaltyAccounts.Add(new LoyaltyAccount
       {
         CustomerID = customer.CustomerID,
@@ -71,29 +79,30 @@ namespace AutoWash.Application.Services
         CustomerId = customer.CustomerID,
         FullName = customer.FullName,
         Phone = customer.Phone,
-        Tier = customer.Tier,
+        Tier = "Member",
         IsLocked = customer.IsLocked,
         SuspendedUntil = customer.SuspendedUntil,
         CreatedAt = customer.CreatedAt
       };
     }
 
+    // ================= LOGIN =================
     public async Task<AuthResponse> LoginAsync(LoginRequest request)
     {
-      if (string.IsNullOrWhiteSpace(request.Phone) || string.IsNullOrWhiteSpace(request.Password))
-      {
-        throw new AuthException("INVALID_REQUEST", "Thông tin đăng nhập không hợp lệ.");
-      }
+      var phone = request.Phone?.Trim();
 
-      var customer = await _context.Customers.SingleOrDefaultAsync(c => c.Phone == request.Phone.Trim());
-      if (customer == null || !BCrypt.Net.BCrypt.Verify(request.Password, customer.PasswordHash))
+      var customer = await _context.Customers
+          .SingleOrDefaultAsync(c => c.Phone == phone);
+
+      if (customer == null ||
+          !BCrypt.Net.BCrypt.Verify(request.Password, customer.PasswordHash))
       {
-        throw new AuthException("INVALID_CREDENTIALS", "Số điện thoại hoặc mật khẩu không đúng");
+        throw new AuthException("INVALID_LOGIN", "Sai tài khoản hoặc mật khẩu.");
       }
 
       if (customer.IsLocked)
       {
-        throw new AuthException("ACCOUNT_LOCKED", "Tài khoản đã bị khóa, vui lòng liên hệ Admin");
+        throw new AuthException("LOCKED", "Tài khoản bị khóa.");
       }
 
       var token = GenerateJwtToken(customer);
@@ -104,33 +113,37 @@ namespace AutoWash.Application.Services
         CustomerId = customer.CustomerID,
         FullName = customer.FullName,
         Phone = customer.Phone,
-        Tier = customer.Tier,
+        Tier = "Member",
         IsLocked = customer.IsLocked,
         SuspendedUntil = customer.SuspendedUntil
       };
     }
 
+    // ================= JWT =================
     private string GenerateJwtToken(Customer customer)
     {
       var tokenHandler = new JwtSecurityTokenHandler();
-      var key = Encoding.ASCII.GetBytes(_jwtSecret);
+      var key = Encoding.UTF8.GetBytes(_jwtSecret);
+
       var claims = new[]
       {
                 new Claim(ClaimTypes.NameIdentifier, customer.CustomerID.ToString()),
                 new Claim(ClaimTypes.Name, customer.FullName),
                 new Claim(ClaimTypes.MobilePhone, customer.Phone),
-                new Claim(ClaimTypes.Role, customer.Role)
+                new Claim(ClaimTypes.Role, "Customer")
             };
 
       var tokenDescriptor = new SecurityTokenDescriptor
       {
         Subject = new ClaimsIdentity(claims),
         Expires = DateTime.UtcNow.AddDays(_jwtExpireDays),
-        SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+        SigningCredentials = new SigningCredentials(
+              new SymmetricSecurityKey(key),
+              SecurityAlgorithms.HmacSha256)
       };
 
-      var token = tokenHandler.CreateToken(tokenDescriptor);
-      return tokenHandler.WriteToken(token);
+      return new JwtSecurityTokenHandler().WriteToken(
+          tokenHandler.CreateToken(tokenDescriptor));
     }
   }
 }
