@@ -36,7 +36,7 @@ builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IVehicleService, VehicleService>();
 builder.Services.AddScoped<VehicleRepository>();
 builder.Services.AddScoped<IAdminCustomerService, AdminCustomerService>();
-builder.Services.AddScoped<AutoWashPro.API.Filters.BookingFinancialProtectionFilter>();
+//.Services.AddScoped<AutoWashPro.API.Filters.BookingFinancialProtectionFilter>();
 
 builder.Services.AddSingleton<IOtpService, OtpService>();
 
