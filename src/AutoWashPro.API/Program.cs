@@ -4,7 +4,7 @@ using AutoWash.Infrastructure.Data;
 using AutoWash.Application.Interfaces;
 using AutoWash.Application.Services;
 using AutoWash.Infrastructure.Repositories;
-using AutoWashPro.API.Middleware;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,6 +21,10 @@ builder.Services.AddScoped<IApplicationDbContext>(provider => provider.GetRequir
 // Nối IBookingService tới BookingService
 builder.Services.AddScoped<IBookingsService, BookingService>();
 
+
+//builder.Services.AddScoped<IAuthService, AuthService>();
+//builder.Services.AddScoped<CustomerRepository>();
+
 // ISSUE-04: Service & Rewards Catalog
 builder.Services.AddScoped<IServiceService, ServiceService>();
 builder.Services.AddScoped<IRewardService, RewardService>();
@@ -31,11 +35,12 @@ builder.Services.AddScoped<RewardRepository>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IVehicleService, VehicleService>();
 builder.Services.AddScoped<VehicleRepository>();
+builder.Services.AddScoped<IAdminCustomerService, AdminCustomerService>();
+//.Services.AddScoped<AutoWashPro.API.Filters.BookingFinancialProtectionFilter>();
+
 builder.Services.AddSingleton<IOtpService, OtpService>();
 
 builder.Services.AddAuthorization();
-builder.Services.AddScoped<IAdminCustomerService, AdminCustomerService>();
-
 var app = builder.Build();
 
 // 3. Kích hoạt giao diện Swagger khi đang code (Development)
@@ -45,7 +50,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseMiddleware<JwtMiddleware>();
+
 app.UseAuthorization();
 app.MapControllers();
 // Nút test kết nối Database
@@ -65,4 +70,5 @@ app.MapGet("/api/test-db", async (ApplicationDbContext dbContext) =>
         return Results.Problem($"Lỗi rồi: {ex.Message}");
     }
 });
+
 app.Run();
