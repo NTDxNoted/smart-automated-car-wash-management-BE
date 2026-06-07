@@ -25,6 +25,10 @@ namespace AutoWashPro.API.Controllers
             if (userIdClaim == null)
                 return Unauthorized(new { message = "UNAUTHORIZED: Cần đăng nhập để xem rewards." });
 
+            var role = User.FindFirst(ClaimTypes.Role)?.Value;
+            if (role != "Member")
+                return StatusCode(403, new { message = "FORBIDDEN: Chỉ Member mới được xem rewards." });
+
             var rewards = await _rewardService.GetActiveRewardsAsync();
             return Ok(new { data = rewards });
         }
