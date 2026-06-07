@@ -11,8 +11,10 @@ namespace AutoWash.Domain.Entities
         public int CustomerID { get; set; }
         public string FullName { get; set; } = string.Empty;
         public string Phone { get; set; } = string.Empty;
+        public string Tier { get; set; } = "Bronze";
         public string Password { get; set; } = string.Empty; // Thêm dòng này để khớp với DB
         public decimal TotalSpending { get; set; }
+        public DateTime? LastVisit { get; set; }
         public bool IsLocked { get; set; }
         public DateTime? SuspendedUntil { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
