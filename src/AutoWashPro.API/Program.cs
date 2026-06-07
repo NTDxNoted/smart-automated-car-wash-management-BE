@@ -1,12 +1,14 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿﻿using Microsoft.EntityFrameworkCore;
 using AutoWash.Infrastructure;
 using AutoWash.Infrastructure.Data;
-using AutoWash.Infrastructure.Repositories;
 using AutoWash.Application.Interfaces;
 using AutoWash.Application.Services;
+using AutoWash.Infrastructure.Repositories;
 using AutoWashPro.API.Middleware;
 
+
 var builder = WebApplication.CreateBuilder(args);
+
 
 // 1. Thêm dịch vụ Controller
 builder.Services.AddControllers();
@@ -15,9 +17,18 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddInfrastructureServices(builder.Configuration);
-
+// Nối IApplicationDbContext tới ApplicationDbContext
 builder.Services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
+
+// Nối IBookingService tới BookingService
 builder.Services.AddScoped<IBookingsService, BookingService>();
+
+
+// ISSUE-04: Service & Rewards Catalog
+builder.Services.AddScoped<IServiceService, ServiceService>();
+builder.Services.AddScoped<IRewardService, RewardService>();
+builder.Services.AddScoped<ServiceRepository>();
+builder.Services.AddScoped<RewardRepository>();
 
 // ISSUE-02: Member Profile & Vehicle Management
 builder.Services.AddScoped<ICustomerService, CustomerService>();
@@ -26,6 +37,9 @@ builder.Services.AddScoped<VehicleRepository>();
 builder.Services.AddSingleton<IOtpService, OtpService>();
 
 builder.Services.AddAuthorization();
+builder.Services.AddScoped<IAdminCustomerService, AdminCustomerService>();
+
+
 var app = builder.Build();
 
 // 3. Kích hoạt giao diện Swagger khi đang code (Development)
@@ -34,6 +48,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
 
 app.UseMiddleware<JwtMiddleware>();
 app.UseAuthorization();
@@ -56,4 +71,5 @@ app.MapGet("/api/test-db", async (ApplicationDbContext dbContext) =>
         return Results.Problem($"Lỗi rồi: {ex.Message}");
     }
 });
+
 app.Run();
