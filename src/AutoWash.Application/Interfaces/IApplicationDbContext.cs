@@ -11,6 +11,8 @@ namespace AutoWash.Application.Interfaces
         DbSet<Booking> Bookings { get; }
         DbSet<LoyaltyAccount> LoyaltyAccounts { get; }
         DbSet<PointTransaction> PointTransactions { get; }
+        DbSet<Service> Services { get; }
+        DbSet<RewardsCatalog> RewardsCatalog { get; }
 
         Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     }

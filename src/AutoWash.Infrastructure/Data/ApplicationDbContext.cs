@@ -11,10 +11,11 @@ namespace AutoWash.Infrastructure.Data
         {
         }
 
-        // Khai báo 3 bảng liên quan đến Issue 07
         public DbSet<Booking> Bookings { get; set; }
         public DbSet<LoyaltyAccount> LoyaltyAccounts { get; set; }
         public DbSet<PointTransaction> PointTransactions { get; set; }
+        public DbSet<Service> Services { get; set; }
+        public DbSet<RewardsCatalog> RewardsCatalog { get; set; }
 
         // Ép Entity Framework lưu Enum dưới dạng chuỗi (String) thay vì số (Int)
         protected override void OnModelCreating(ModelBuilder builder)
@@ -25,11 +26,15 @@ namespace AutoWash.Infrastructure.Data
             builder.Entity<Booking>().ToTable("booking");
             builder.Entity<LoyaltyAccount>().ToTable("loyaltyaccount");
             builder.Entity<PointTransaction>().ToTable("pointtransaction");
+            builder.Entity<Service>().ToTable("service");
+            builder.Entity<RewardsCatalog>().ToTable("rewardscatalog");
 
             // Khai báo Khóa chính
             builder.Entity<Booking>().HasKey(b => b.BookingID);
             builder.Entity<LoyaltyAccount>().HasKey(l => l.LoyaltyID);
             builder.Entity<PointTransaction>().HasKey(p => p.PointTxnID);
+            builder.Entity<Service>().HasKey(s => s.ServiceID);
+            builder.Entity<RewardsCatalog>().HasKey(r => r.RewardID);
 
             // Ép kiểu Enum
             builder.Entity<Booking>().Property(b => b.Status).HasConversion<string>();
