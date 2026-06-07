@@ -10,7 +10,7 @@ namespace AutoWash.Infrastructure.Data
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options)
         {
         }
-
+        public DbSet<Customer> Customers { get; set; } // Thêm dòng này vào
         public DbSet<Booking> Bookings { get; set; }
         public DbSet<LoyaltyAccount> LoyaltyAccounts { get; set; }
         public DbSet<PointTransaction> PointTransactions { get; set; }

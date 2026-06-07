@@ -13,7 +13,7 @@ namespace AutoWash.Application.Interfaces
         DbSet<PointTransaction> PointTransactions { get; }
         DbSet<Service> Services { get; }
         DbSet<RewardsCatalog> RewardsCatalog { get; }
-
+        DbSet<Customer> Customers { get; }
         Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     }
 }
