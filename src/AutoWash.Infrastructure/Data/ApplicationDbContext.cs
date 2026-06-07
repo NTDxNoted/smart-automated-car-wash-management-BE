@@ -16,6 +16,8 @@ namespace AutoWash.Infrastructure.Data
         public DbSet<Booking> Bookings { get; set; }
         public DbSet<LoyaltyAccount> LoyaltyAccounts { get; set; }
         public DbSet<PointTransaction> PointTransactions { get; set; }
+        public DbSet<Service> Services { get; set; }
+        public DbSet<RewardsCatalog> RewardsCatalog { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -26,6 +28,8 @@ namespace AutoWash.Infrastructure.Data
             builder.Entity<Booking>().ToTable("booking").HasKey(b => b.BookingID);
             builder.Entity<LoyaltyAccount>().ToTable("loyaltyaccount").HasKey(l => l.LoyaltyID);
             builder.Entity<PointTransaction>().ToTable("pointtransaction").HasKey(p => p.PointTxnID);
+            builder.Entity<Service>().ToTable("service").HasKey(s => s.ServiceID);
+            builder.Entity<RewardsCatalog>().ToTable("rewardscatalog").HasKey(r => r.RewardID);
 
             // BR-09: UNIQUE (CustomerID, LicensePlate)
             builder.Entity<Vehicle>()
