@@ -1,4 +1,4 @@
-﻿﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using AutoWash.Infrastructure;
 using AutoWash.Infrastructure.Data;
 using AutoWash.Application.Interfaces;
@@ -6,9 +6,7 @@ using AutoWash.Application.Services;
 using AutoWash.Infrastructure.Repositories;
 using AutoWashPro.API.Middleware;
 
-
 var builder = WebApplication.CreateBuilder(args);
-
 
 // 1. Thêm dịch vụ Controller
 builder.Services.AddControllers();
@@ -22,7 +20,6 @@ builder.Services.AddScoped<IApplicationDbContext>(provider => provider.GetRequir
 
 // Nối IBookingService tới BookingService
 builder.Services.AddScoped<IBookingsService, BookingService>();
-
 
 // ISSUE-04: Service & Rewards Catalog
 builder.Services.AddScoped<IServiceService, ServiceService>();
@@ -39,7 +36,6 @@ builder.Services.AddSingleton<IOtpService, OtpService>();
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<IAdminCustomerService, AdminCustomerService>();
 
-
 var app = builder.Build();
 
 // 3. Kích hoạt giao diện Swagger khi đang code (Development)
@@ -49,7 +45,6 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-
 app.UseMiddleware<JwtMiddleware>();
 app.UseAuthorization();
 app.MapControllers();
@@ -58,7 +53,6 @@ app.MapGet("/api/test-db", async (ApplicationDbContext dbContext) =>
 {
     try
     {
-        // Hàm CanConnectAsync() sẽ thử ping vào database
         bool canConnect = await dbContext.Database.CanConnectAsync();
         if (canConnect)
         {
@@ -71,5 +65,4 @@ app.MapGet("/api/test-db", async (ApplicationDbContext dbContext) =>
         return Results.Problem($"Lỗi rồi: {ex.Message}");
     }
 });
-
 app.Run();

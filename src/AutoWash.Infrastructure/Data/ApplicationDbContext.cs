@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using AutoWash.Application.Interfaces;
 using AutoWash.Domain.Entities;
 
@@ -23,6 +23,7 @@ namespace AutoWash.Infrastructure.Data
         {
             base.OnModelCreating(builder);
 
+            // Chốt cứng tên bảng
             builder.Entity<Customer>().ToTable("customer").HasKey(c => c.CustomerID);
             builder.Entity<Vehicle>().ToTable("vehicle").HasKey(v => v.VehicleID);
             builder.Entity<Booking>().ToTable("booking").HasKey(b => b.BookingID);
