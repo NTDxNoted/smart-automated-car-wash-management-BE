@@ -123,16 +123,10 @@ namespace AutoWash.Application.Services
 
             customer.IsLocked = !customer.IsLocked;
 
-            if (customer.IsLocked)
-            {
-                customer.SuspendedUntil = DateTime.UtcNow.AddYears(100);
-            }
-            else
-            {
-                customer.SuspendedUntil = null;
-            }
-
+            customer.IsLocked = !customer.IsLocked;
             await _context.SaveChangesAsync();
+
+            
 
             return new LockCustomerResponseDto
             {

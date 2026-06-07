@@ -31,7 +31,7 @@ builder.Services.AddScoped<RewardRepository>();
 
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<IAdminCustomerService, AdminCustomerService>();
-
+builder.Services.AddScoped<AutoWashPro.API.Filters.BookingFinancialProtectionFilter>();
 
 var app = builder.Build();
 
