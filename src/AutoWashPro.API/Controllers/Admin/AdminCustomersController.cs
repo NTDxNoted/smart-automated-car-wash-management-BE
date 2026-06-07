@@ -10,7 +10,7 @@ namespace AutoWashPro.API.Controllers
     [Route("api/admin/customers")]
     [ApiController]
     // Tạm thời comment dòng [Authorize] dưới đây nếu nhóm chưa làm xong phần Login
-    // [Authorize(Roles = "Admin")] 
+     [Authorize(Roles = "Admin")] 
     public class AdminCustomersController : ControllerBase
     {
         private readonly IAdminCustomerService _adminCustomerService;
