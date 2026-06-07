@@ -9,7 +9,6 @@ namespace AutoWash.Application.Interfaces
     public interface IApplicationDbContext
     {
         DbSet<Booking> Bookings { get; }
-        DbSet<Customer> Customers { get; }
         DbSet<LoyaltyAccount> LoyaltyAccounts { get; }
         DbSet<PointTransaction> PointTransactions { get; }
         DbSet<Service> Services { get; }
