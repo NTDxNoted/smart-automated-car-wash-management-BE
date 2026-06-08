@@ -6,8 +6,8 @@ WORKDIR /src
 COPY . .
 
 # Khôi phục các thư viện (NuGet packages) và Build dự án
-RUN dotnet restore "AutoWashPro.API/AutoWashPro.API.csproj"
-RUN dotnet publish "AutoWashPro.API/AutoWashPro.API.csproj" -c Release -o /app/publish
+RUN dotnet restore "src/AutoWashPro.API/AutoWashPro.API.csproj"
+RUN dotnet publish "src/AutoWashPro.API/AutoWashPro.API.csproj" -c Release -o /app/publish
 
 # --- Bước 2: Môi trường Runtime (Chỉ dùng ASP.NET để chạy, giúp file nhẹ nhất có thể) ---
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
