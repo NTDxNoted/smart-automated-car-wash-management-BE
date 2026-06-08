@@ -57,6 +57,7 @@ namespace AutoWash.Application.Services
         FullName = request.FullName.Trim(),
         Phone = phone,
         Password = hashedPassword,
+        Tier = "1", // Mặc định là Tier 1 khi đăng ký mới
         IsLocked = false,
         TotalSpending = 0m,
         CreatedAt = DateTime.UtcNow

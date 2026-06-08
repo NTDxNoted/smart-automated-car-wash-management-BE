@@ -126,7 +126,7 @@ namespace AutoWash.Tests.Application.Services
         FullName = "Test User",
         Phone = "0901234567",
         Password = hashedPassword,
-        Tier = "Member",
+        Tier = "1",
         IsLocked = false,
         CreatedAt = DateTime.UtcNow
       };
@@ -167,7 +167,7 @@ namespace AutoWash.Tests.Application.Services
         FullName = "Test User",
         Phone = "0901234567",
         Password = hashedPassword,
-        Tier = "Member",
+        Tier = "1",
         IsLocked = false,
         CreatedAt = DateTime.UtcNow
       };
@@ -203,7 +203,7 @@ namespace AutoWash.Tests.Application.Services
         FullName = "Test User",
         Phone = "0901234567",
         Password = hashedPassword,
-        Tier = "Member",
+        Tier = "1",
         IsLocked = true, // Account is locked
         CreatedAt = DateTime.UtcNow
       };
@@ -259,7 +259,7 @@ namespace AutoWash.Tests.Application.Services
         FullName = "Test User",
         Phone = "0901234567",
         Password = hashedPassword,
-        Tier = "Member",
+        Tier = "1",
         IsLocked = false,
         CreatedAt = DateTime.UtcNow
       };
@@ -314,7 +314,7 @@ namespace AutoWash.Tests.Application.Services
         FullName = "Test User",
         Phone = "0901234567",
         Password = hashedPassword,
-        Tier = "Member",
+        Tier = "1",
         IsLocked = false,
         CreatedAt = DateTime.UtcNow
       };
