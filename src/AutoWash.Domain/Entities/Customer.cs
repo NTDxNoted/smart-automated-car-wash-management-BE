@@ -13,6 +13,7 @@ namespace AutoWash.Domain.Entities
         public string Phone { get; set; } = string.Empty;
         [NotMapped]
         public string Tier { get; set; } = "1";
+        public int TierID { get; set; } = 1;
         public string Password { get; set; } = string.Empty; // Thêm dòng này để khớp với DB
         public decimal TotalSpending { get; set; }
         public DateTime? LastVisit { get; set; }

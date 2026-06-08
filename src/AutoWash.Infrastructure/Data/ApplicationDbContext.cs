@@ -11,6 +11,7 @@ namespace AutoWash.Infrastructure.Data
         {
         }
 
+        public DbSet<Tier> Tiers { get; set; }
         public DbSet<Customer> Customers { get; set; }
         public DbSet<Vehicle> Vehicles { get; set; }
         public DbSet<Booking> Bookings { get; set; }
@@ -23,6 +24,19 @@ namespace AutoWash.Infrastructure.Data
         {
             base.OnModelCreating(builder);
 
+            builder.Entity<Tier>(entity =>
+            {
+                entity.ToTable("tier");
+                entity.HasKey(e => e.TierID);
+
+                entity.Property(e => e.TierID).HasColumnName("tierid");
+                entity.Property(e => e.TierName).HasColumnName("tiername");
+                entity.Property(e => e.MinSpending).HasColumnName("minspending");
+                entity.Property(e => e.BookingWindowDays).HasColumnName("bookingwindowdays");
+                entity.Property(e => e.DiscountRate).HasColumnName("discountrate");
+                entity.Property(e => e.PriorityScore).HasColumnName("priorityscore");
+            });
+
             builder.Entity<Customer>(entity =>
             {
                 entity.ToTable("customer");
@@ -32,6 +46,7 @@ namespace AutoWash.Infrastructure.Data
                 entity.Property(e => e.FullName).HasColumnName("fullname");
                 entity.Property(e => e.Phone).HasColumnName("phone");
                 entity.Property(e => e.Password).HasColumnName("password");
+                entity.Property(e => e.TierID).HasColumnName("tierid");
                 entity.Property(e => e.TotalSpending).HasColumnName("totalspending");
                 entity.Property(e => e.LastVisit).HasColumnName("lastvisit");
                 entity.Property(e => e.IsLocked).HasColumnName("islocked");
