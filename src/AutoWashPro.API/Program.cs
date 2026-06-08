@@ -1,9 +1,13 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 using AutoWash.Infrastructure;
 using AutoWash.Infrastructure.Data;
 using AutoWash.Application.Interfaces;
 using AutoWash.Application.Services;
 using AutoWash.Infrastructure.Repositories;
+using AutoWashPro.API.Middleware;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -18,12 +22,30 @@ builder.Services.AddInfrastructureServices(builder.Configuration);
 // Nối IApplicationDbContext tới ApplicationDbContext
 builder.Services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
 
+// ISSUE-01: Authentication & Authorization
+var jwtSecretKey = builder.Configuration["Jwt:SecretKey"];
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.ASCII.GetBytes(jwtSecretKey)),
+        ValidateIssuer = false,
+        ValidateAudience = false,
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero
+    };
+});
+
+builder.Services.AddScoped<IAuthService, AuthService>();
+
 // Nối IBookingService tới BookingService
 builder.Services.AddScoped<IBookingsService, BookingService>();
-
-
-//builder.Services.AddScoped<IAuthService, AuthService>();
-//builder.Services.AddScoped<CustomerRepository>();
 
 // ISSUE-04: Service & Rewards Catalog
 builder.Services.AddScoped<IServiceService, ServiceService>();
@@ -50,7 +72,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseHttpsRedirection();
 
+// ISSUE-01: JWT Middleware
+app.UseMiddleware<JwtMiddleware>();
+
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 // Nút test kết nối Database

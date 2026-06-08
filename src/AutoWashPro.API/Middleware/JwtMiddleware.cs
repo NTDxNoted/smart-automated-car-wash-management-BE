@@ -18,7 +18,7 @@ namespace AutoWashPro.API.Middleware
         public JwtMiddleware(RequestDelegate next, IConfiguration configuration)
         {
             _next = next;
-            _jwtKey = configuration["Jwt:Key"] ?? "AutoWashPro_DefaultSecretKey_2025!!";
+            _jwtKey = configuration["Jwt:SecretKey"] ?? "AutoWashPro_DefaultSecretKey_2025!!";
         }
 
         public async Task InvokeAsync(HttpContext context)
