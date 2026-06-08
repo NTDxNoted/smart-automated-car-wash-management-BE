@@ -13,7 +13,7 @@ namespace AutoWash.Infrastructure.Data
 
         public DbSet<Customer> Customers { get; set; }
         public DbSet<Vehicle> Vehicles { get; set; }
-        public DbSet<Customer> Customers { get; set; } // Thêm dòng này vào
+         
         public DbSet<Booking> Bookings { get; set; }
         public DbSet<LoyaltyAccount> LoyaltyAccounts { get; set; }
         public DbSet<PointTransaction> PointTransactions { get; set; }

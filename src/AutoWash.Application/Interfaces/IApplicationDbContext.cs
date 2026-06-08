@@ -14,7 +14,10 @@ namespace AutoWash.Application.Interfaces
         DbSet<Service> Services { get; }
         DbSet<RewardsCatalog> RewardsCatalog { get; }
         DbSet<Customer> Customers { get; }
+
+
         DbSet<Vehicle> Vehicles { get; }
+
         Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     }
 }
