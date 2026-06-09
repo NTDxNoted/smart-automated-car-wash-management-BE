@@ -57,7 +57,7 @@ namespace AutoWash.Application.Services
             if (eligibleTier == null || eligibleTier.TierID == customer.TierID) return;
 
             // Chỉ upgrade, không downgrade ở đây (BR-21)
-            if (eligibleTier.PriorityScore <= customer.TierID) return;
+            if (eligibleTier.TierID <= customer.TierID) return;
 
             _logger.LogInformation("[TierUpgrade] Customer {Id}: Tier {Old} → {New}",
                 customerId, customer.TierID, eligibleTier.TierID);

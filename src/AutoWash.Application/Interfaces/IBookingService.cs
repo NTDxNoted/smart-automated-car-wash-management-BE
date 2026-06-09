@@ -14,5 +14,8 @@ namespace AutoWash.Application.Interfaces
         // Hàm Cancel của bạn đã chuẩn rồi
         Task<CancelBookingResponseDto> CancelBookingAsync(int bookingId, int? customerId, string? guestPhone);
         Task GetCustomerBookingsAsync(int customerId, string? status, int page, int pageSize);
+
+        // BR-21: Staff/Admin đánh dấu booking hoàn thành → trigger upgrade tier
+        Task<BookingResponseDto> CompleteBookingAsync(int bookingId);
     }
 }

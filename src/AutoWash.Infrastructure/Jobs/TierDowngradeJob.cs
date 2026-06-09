@@ -14,6 +14,9 @@ namespace AutoWash.Infrastructure.Jobs
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<TierDowngradeJob> _logger;
 
+        // Ngăn chạy đồng thời trong cùng một process
+        private static readonly SemaphoreSlim _lock = new SemaphoreSlim(1, 1);
+
         public TierDowngradeJob(IServiceScopeFactory scopeFactory, ILogger<TierDowngradeJob> logger)
         {
             _scopeFactory = scopeFactory;
@@ -36,14 +39,28 @@ namespace AutoWash.Infrastructure.Jobs
                     break;
                 }
 
-                _logger.LogInformation("[TierDowngradeJob] Bắt đầu hạ hạng tháng {Month}/{Year}",
-                    DateTime.UtcNow.Month, DateTime.UtcNow.Year);
+                // Bỏ qua nếu đang có lần chạy khác (cùng process)
+                if (!await _lock.WaitAsync(0, stoppingToken))
+                {
+                    _logger.LogWarning("[TierDowngradeJob] Bỏ qua — đang có lần chạy khác.");
+                    continue;
+                }
 
-                using var scope = _scopeFactory.CreateScope();
-                var tierService = scope.ServiceProvider.GetRequiredService<ITierService>();
-                await tierService.RunMonthlyDowngradeAsync();
+                try
+                {
+                    _logger.LogInformation("[TierDowngradeJob] Bắt đầu hạ hạng tháng {Month}/{Year}",
+                        DateTime.UtcNow.Month, DateTime.UtcNow.Year);
 
-                _logger.LogInformation("[TierDowngradeJob] Hoàn tất hạ hạng.");
+                    using var scope = _scopeFactory.CreateScope();
+                    var tierService = scope.ServiceProvider.GetRequiredService<ITierService>();
+                    await tierService.RunMonthlyDowngradeAsync();
+
+                    _logger.LogInformation("[TierDowngradeJob] Hoàn tất hạ hạng.");
+                }
+                finally
+                {
+                    _lock.Release();
+                }
             }
         }
 
