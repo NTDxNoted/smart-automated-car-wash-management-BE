@@ -60,7 +60,27 @@ namespace AutoWashPro.API.Controllers // Nhớ giữ nguyên namespace hiện t�
             }
         }
 
-       
-        
+
+        // 4. POST /api/bookings/{id}/complete  (Admin/Staff only — BR-21)
+        [HttpPost("{id}/complete")]
+        public async Task<IActionResult> CompleteBooking(int id)
+        {
+            var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+            if (role != "Admin" && role != "Staff")
+                return StatusCode(403, new { error = "FORBIDDEN", message = "Chỉ Admin hoặc Staff mới được đánh dấu hoàn thành." });
+
+            try
+            {
+                var result = await _bookingsService.CompleteBookingAsync(id);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                string message = ex.Message;
+                if (message.Contains("NOT_FOUND")) return NotFound(new { error = "NOT_FOUND", message = message });
+                if (message.Contains("INVALID_STATUS")) return BadRequest(new { error = "INVALID_STATUS", message = message });
+                return BadRequest(new { error = "BAD_REQUEST", message = message });
+            }
+        }
     }
 }

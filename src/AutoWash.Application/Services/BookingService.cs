@@ -14,11 +14,13 @@ namespace AutoWash.Application.Services
     {
         private readonly IApplicationDbContext _context;
         private readonly ILogger<BookingService> _logger;
+        private readonly ITierService _tierService;
 
-        public BookingService(IApplicationDbContext context, ILogger<BookingService> logger)
+        public BookingService(IApplicationDbContext context, ILogger<BookingService> logger, ITierService tierService)
         {
             _context = context;
             _logger = logger;
+            _tierService = tierService;
         }
 
         // 1. GET DANH SÁCH (Phân trang & Filter)
@@ -119,6 +121,59 @@ namespace AutoWash.Application.Services
         public Task GetCustomerBookingsAsync(int customerId, string? status, int page, int pageSize)
         {
             throw new NotImplementedException();
+        }
+
+        // BR-21: Staff/Admin hoàn tất booking → cập nhật TotalSpending → trigger upgrade tier
+        public async Task<BookingResponseDto> CompleteBookingAsync(int bookingId)
+        {
+            var booking = await _context.Bookings.FirstOrDefaultAsync(b => b.BookingID == bookingId);
+            if (booking == null) throw new Exception("NOT_FOUND: Không tìm thấy lịch đặt.");
+
+            if (booking.Status != BookingStatus.Pending)
+                throw new Exception("INVALID_STATUS: Chỉ có thể hoàn thành booking ở trạng thái Pending.");
+
+            booking.Status = BookingStatus.Completed;
+            booking.CompletedAt = DateTime.UtcNow;
+
+            // Cộng TotalSpending cho member (CustomerID = 0 nghĩa là guest)
+            if (booking.CustomerID > 0)
+            {
+                var customer = await _context.Customers
+                    .FirstOrDefaultAsync(c => c.CustomerID == booking.CustomerID);
+
+                if (customer != null)
+                {
+                    customer.TotalSpending += booking.FinalAmount;
+                    await _context.SaveChangesAsync();
+
+                    // BR-21: evaluate upgrade real-time
+                    await _tierService.EvaluateUpgradeAsync(customer.CustomerID);
+
+                    _logger.LogInformation("[CompleteBooking] BookingID={Id} completed, CustomerID={Cid}, Amount={Amt}",
+                        bookingId, customer.CustomerID, booking.FinalAmount);
+                    return new BookingResponseDto
+                    {
+                        BookingId = booking.BookingID,
+                        LicensePlate = booking.LicensePlate,
+                        ScheduledTime = booking.ScheduledTime,
+                        Status = booking.Status.ToString(),
+                        FinalAmount = booking.FinalAmount,
+                        PointsEarned = booking.PointsEarned
+                    };
+                }
+            }
+
+            await _context.SaveChangesAsync();
+
+            return new BookingResponseDto
+            {
+                BookingId = booking.BookingID,
+                LicensePlate = booking.LicensePlate,
+                ScheduledTime = booking.ScheduledTime,
+                Status = booking.Status.ToString(),
+                FinalAmount = booking.FinalAmount,
+                PointsEarned = booking.PointsEarned
+            };
         }
     }
 }
