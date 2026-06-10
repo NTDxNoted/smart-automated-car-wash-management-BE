@@ -41,6 +41,10 @@ namespace AutoWashPro.API.Controllers.Admin
                 {
                     return BadRequest(new { error = "CASH_NOT_CONFIRMED", message = "Nhân viên chưa xác nhận đã thu đủ tiền mặt" });
                 }
+                if (ex.Message == "TRANSFER_NOT_CONFIRMED")
+                {
+                    return BadRequest(new { error = "TRANSFER_NOT_CONFIRMED", message = "Nhân viên chưa xác nhận đã nhận đủ tiền chuyển khoản" });
+                }
                 if (ex.Message == "INVALID_STATUS")
                 {
                     return BadRequest(new { error = "INVALID_STATUS", message = "Chỉ có đơn đặt lịch ở trạng thái Pending mới được phép thanh toán" });

@@ -62,38 +62,5 @@ namespace AutoWash.Application.Services
 
             return calculatedPoints;
         }
-
-        public async Task RedeemPointsAsync(int bookingId)
-        {
-            var booking = await _context.Bookings.FindAsync(bookingId);
-            if (booking == null || booking.PointsRedeemed <= 0) return;
-
-            var loyalty = await _context.LoyaltyAccounts
-                .FirstOrDefaultAsync(l => l.CustomerID == booking.CustomerID);
-
-            if (loyalty == null)
-            {
-                throw new Exception("LOYALTY_ACCOUNT_NOT_FOUND: Không tìm thấy tài khoản loyalty để trừ điểm.");
-            }
-
-            loyalty.TotalPoints -= booking.PointsRedeemed;
-            if (loyalty.TotalPoints < 0)
-            {
-                loyalty.TotalPoints = 0;
-            }
-            loyalty.LastUpdated = DateTime.UtcNow;
-
-            var pointTxn = new PointTransaction
-            {
-                LoyaltyID = loyalty.LoyaltyID,
-                Points = booking.PointsRedeemed,
-                Type = PointTransactionType.Redeem,
-                RefBookingID = booking.BookingID,
-                ExpiredAt = null,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            await _context.PointTransactions.AddAsync(pointTxn);
-        }
     }
 }

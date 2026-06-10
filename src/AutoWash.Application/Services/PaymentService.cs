@@ -41,7 +41,14 @@ namespace AutoWash.Application.Services
                     throw new Exception("CASH_NOT_CONFIRMED");
                 }
             }
-            else if (!request.PaymentMethod.Equals("Transfer", StringComparison.OrdinalIgnoreCase))
+            else if (request.PaymentMethod.Equals("Transfer", StringComparison.OrdinalIgnoreCase))
+            {
+                if (request.Confirmed != true)
+                {
+                    throw new Exception("TRANSFER_NOT_CONFIRMED");
+                }
+            }
+            else
             {
                 throw new Exception("INVALID_PAYMENT_METHOD");
             }
@@ -71,8 +78,6 @@ namespace AutoWash.Application.Services
 
                     booking.Status = BookingStatus.Completed;
                     booking.CompletedAt = DateTime.UtcNow;
-
-                    await _pointService.RedeemPointsAsync(booking.BookingID);
 
                     var customer = await _context.Customers.FindAsync(booking.CustomerID);
                     if (customer != null)
