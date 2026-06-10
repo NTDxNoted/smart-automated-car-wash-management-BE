@@ -72,6 +72,11 @@ builder.Services.AddHostedService<TierDowngradeJob>();
 builder.Services.AddScoped<IAdminBookingService, AdminBookingService>();
 builder.Services.AddHostedService<AutoNoShowJob>();
 
+// ISSUE-09: Offline Payment Processing
+builder.Services.AddScoped<IPaymentService, PaymentService>();
+builder.Services.AddScoped<IPointService, PointService>();
+builder.Services.AddScoped<TransactionRepository>();
+
 builder.Services.AddAuthorization();
 var app = builder.Build();
 
