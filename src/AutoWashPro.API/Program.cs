@@ -68,6 +68,11 @@ builder.Services.AddScoped<ITierService, TierService>();
 builder.Services.AddScoped<TierRepository>();
 builder.Services.AddHostedService<TierDowngradeJob>();
 
+// ISSUE-08: Admin Booking Workflow
+builder.Services.AddScoped<IAdminBookingService, AdminBookingService>();
+builder.Services.AddHostedService<AutoNoShowJob>();
+builder.Services.AddHostedService<SuspensionCheckJob>();
+
 builder.Services.AddAuthorization();
 var app = builder.Build();
 
