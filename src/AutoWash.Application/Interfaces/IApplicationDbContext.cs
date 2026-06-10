@@ -1,4 +1,4 @@
-﻿﻿using AutoWash.Domain.Entities;
+﻿using AutoWash.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
 using System.Threading;
@@ -16,6 +16,7 @@ namespace AutoWash.Application.Interfaces
         DbSet<Tier> Tiers { get; }
         DbSet<Customer> Customers { get; }
         DbSet<Vehicle> Vehicles { get; }
+        DbSet<Transaction> Transactions { get; }
         Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     }
 }
