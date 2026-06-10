@@ -4,6 +4,17 @@
 --  10 Tables | Car only | Pending → Completed / Failed
 -- ============================================================
 
+DROP TABLE IF EXISTS Tier CASCADE;
+DROP TABLE IF EXISTS Customer CASCADE;
+DROP TABLE IF EXISTS Vehicle CASCADE;
+DROP TABLE IF EXISTS Service CASCADE;
+DROP TABLE IF EXISTS Rewards_Catalog CASCADE;
+DROP TABLE IF EXISTS Promotion CASCADE;
+DROP TABLE IF EXISTS Booking CASCADE;
+DROP TABLE IF EXISTS Transaction CASCADE;
+DROP TABLE IF EXISTS LoyaltyAccount CASCADE;
+DROP TABLE IF EXISTS PointTransaction CASCADE;
+DROP TABLE IF EXISTS CustomerPromotion CASCADE;
 -- ── 1. Tier ─────────────────────────────────────────────
 CREATE TABLE Tier (
     TierID            SERIAL         PRIMARY KEY,
@@ -29,6 +40,7 @@ CREATE TABLE Customer (
     FullName      VARCHAR(100)   NOT NULL,
     Phone         VARCHAR(15)    NOT NULL UNIQUE,
     Password      VARCHAR(255)   NOT NULL,
+    Role          VARCHAR(20)    NOT NULL DEFAULT 'MEMBER' CHECK (Role IN ('MEMBER', 'ADMIN')),
     TierID        INT            NOT NULL DEFAULT 1,
     TotalSpending DECIMAL(15,2)  NOT NULL DEFAULT 0.00,
     LastVisit     TIMESTAMP      NULL DEFAULT NULL,
@@ -100,7 +112,7 @@ CREATE TABLE Booking (
     PromotionID     INT            NULL DEFAULT NULL,
     ScheduledTime   TIMESTAMP      NOT NULL,
     CheckInTime     TIMESTAMP      NULL DEFAULT NULL,
-    Status          VARCHAR(20)    NOT NULL DEFAULT 'Pending' CHECK (Status IN ('Pending','Completed','Failed','Cancelled','No-show')),
+    Status          VARCHAR(20)    NOT NULL DEFAULT 'Pending' CHECK (Status IN ('Pending','Completed','Failed','Cancelled','Noshow')),
     BaseAmount      DECIMAL(10,2)  NOT NULL,
     DiscountApplied DECIMAL(10,2)  NOT NULL DEFAULT 0.00,
     FinalAmount     DECIMAL(10,2)  NOT NULL,
@@ -171,6 +183,8 @@ CREATE TABLE CustomerPromotion (
     CONSTRAINT fk_cp_booking  FOREIGN KEY (BookingID)   REFERENCES Booking(BookingID)     ON UPDATE CASCADE ON DELETE RESTRICT
 );
 
+
+
 -- ── View: RFM for ML ────────────────────────────────────
 CREATE OR REPLACE VIEW vw_customer_rfm AS
 SELECT
@@ -229,17 +243,19 @@ INSERT INTO Promotion (Title, PromoCode, MinTierID, DiscountType, DiscountValue,
 
 -- ── Customer ────────────────────────────────────────────
 -- Password: 'password123' (bcrypt placeholder)
-INSERT INTO Customer (FullName, Phone, Password, TierID, TotalSpending, LastVisit, CreatedAt, IsLocked) VALUES
-('Nguyễn Văn An',      '0901111001', '$2b$10$examplehashAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 1, 0,        NULL,                        '2025-03-01 08:00:00', FALSE),
-('Trần Thị Bích',      '0901111002', '$2b$10$examplehashAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 2, 650000,  '2025-05-10 14:30:00',       '2025-01-15 09:00:00', FALSE),
-('Lê Hoàng Cường',     '0901111003', '$2b$10$examplehashAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 3, 1800000, '2025-05-08 10:00:00',       '2024-12-20 11:00:00', FALSE),
-('Phạm Thị Dung',      '0901111004', '$2b$10$examplehashAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 4, 3500000, '2025-05-12 16:00:00',       '2024-11-05 08:30:00', FALSE),
-('Hoàng Minh Đức',     '0901111005', '$2b$10$examplehashAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 2, 720000,  '2025-05-05 09:15:00',       '2025-02-01 10:00:00', FALSE),
-('Vũ Thị Hoa',         '0901111006', '$2b$10$examplehashAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 1, 120000,  '2025-04-20 13:00:00',       '2025-04-01 08:00:00', FALSE),
-('Đặng Quốc Hùng',     '0901111007', '$2b$10$examplehashAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 3, 2100000, '2025-05-11 11:00:00',       '2024-10-10 09:00:00', FALSE),
-('Bùi Thị Lan',        '0901111008', '$2b$10$examplehashAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 1, 80000,   '2025-05-01 15:00:00',       '2025-05-01 08:00:00', FALSE),
-('Ngô Thanh Long',     '0901111009', '$2b$10$examplehashAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 4, 4200000, '2025-05-13 10:30:00',       '2024-09-15 07:00:00', FALSE),
-('Đinh Thị Mai',       '0901111010', '$2b$10$examplehashAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 2, 580000,  '2025-05-07 14:00:00',       '2025-01-20 09:00:00', FALSE);
+INSERT INTO Customer (FullName, Phone, Password, Role, TierID, TotalSpending, LastVisit, CreatedAt, IsLocked) VALUES
+('Nguyễn Văn An',      '0901111001', '$2a$11$Kw4MZIqYu0UNFSfpZarTLOeEAy5x9UbDzrblb2mQx/.yrZ/DuUSDC', 'MEMBER', 1, 0,        NULL,                        '2025-03-01 08:00:00', FALSE),
+('Trần Thị Bích',      '0901111002', '$2a$11$Kw4MZIqYu0UNFSfpZarTLOeEAy5x9UbDzrblb2mQx/.yrZ/DuUSDC', 'MEMBER', 2, 650000,  '2025-05-10 14:30:00',       '2025-01-15 09:00:00', FALSE),
+('Lê Hoàng Cường',     '0901111003', '$2a$11$Kw4MZIqYu0UNFSfpZarTLOeEAy5x9UbDzrblb2mQx/.yrZ/DuUSDC', 'MEMBER', 3, 1800000, '2025-05-08 10:00:00',       '2024-12-20 11:00:00', FALSE),
+('Phạm Thị Dung',      '0901111004', '$2a$11$Kw4MZIqYu0UNFSfpZarTLOeEAy5x9UbDzrblb2mQx/.yrZ/DuUSDC', 'MEMBER', 4, 3500000, '2025-05-12 16:00:00',       '2024-11-05 08:30:00', FALSE),
+('Hoàng Minh Đức',     '0901111005', '$2a$11$Kw4MZIqYu0UNFSfpZarTLOeEAy5x9UbDzrblb2mQx/.yrZ/DuUSDC', 'MEMBER', 2, 720000,  '2025-05-05 09:15:00',       '2025-02-01 10:00:00', FALSE),
+('Vũ Thị Hoa',         '0901111006', '$2a$11$Kw4MZIqYu0UNFSfpZarTLOeEAy5x9UbDzrblb2mQx/.yrZ/DuUSDC', 'MEMBER', 1, 120000,  '2025-04-20 13:00:00',       '2025-04-01 08:00:00', FALSE),
+('Đặng Quốc Hùng',     '0901111007', '$2a$11$Kw4MZIqYu0UNFSfpZarTLOeEAy5x9UbDzrblb2mQx/.yrZ/DuUSDC', 'MEMBER', 3, 2100000, '2025-05-11 11:00:00',       '2024-10-10 09:00:00', FALSE),
+('Bùi Thị Lan',        '0901111008', '$2a$11$Kw4MZIqYu0UNFSfpZarTLOeEAy5x9UbDzrblb2mQx/.yrZ/DuUSDC', 'MEMBER', 1, 80000,   '2025-05-01 15:00:00',       '2025-05-01 08:00:00', FALSE),
+('Ngô Thanh Long',     '0901111009', '$2a$11$Kw4MZIqYu0UNFSfpZarTLOeEAy5x9UbDzrblb2mQx/.yrZ/DuUSDC', 'MEMBER', 4, 4200000, '2025-05-13 10:30:00',       '2024-09-15 07:00:00', FALSE),
+('Đinh Thị Mai',       '0901111010', '$2a$11$Kw4MZIqYu0UNFSfpZarTLOeEAy5x9UbDzrblb2mQx/.yrZ/DuUSDC', 'MEMBER', 2, 580000,  '2025-05-07 14:00:00',       '2025-01-20 09:00:00', FALSE),
+('Super Admin',        '0999999991', '$2a$11$Kw4MZIqYu0UNFSfpZarTLOeEAy5x9UbDzrblb2mQx/.yrZ/DuUSDC', 'ADMIN',  1, 0,       NULL,                        '2025-01-01 00:00:00', FALSE),
+('Manager Admin',      '0999999992', '$2a$11$Kw4MZIqYu0UNFSfpZarTLOeEAy5x9UbDzrblb2mQx/.yrZ/DuUSDC', 'ADMIN',  1, 0,       NULL,                        '2025-01-01 00:00:00', FALSE);
 
 -- ── LoyaltyAccount ──────────────────────────────────────
 INSERT INTO LoyaltyAccount (CustomerID, TotalPoints, LastUpdated) VALUES
@@ -322,7 +338,7 @@ INSERT INTO CustomerPromotion (CustomerID, PromotionID, BookingID, UsedAt, Disco
 (1,  1, 11, '2025-05-14 10:00:00', 30000),
 (4,  3, 13, '2025-05-14 12:00:00', 52500);
 
--- ============================================================
+
 --  END DEMO DATA
 --  10 Customers | 15 Vehicles | 16 Bookings
 --  (10 Completed, 5 Pending, 1 Failed)
