@@ -34,23 +34,14 @@ namespace AutoWash.Application.Services
                 throw new Exception("INVALID_STATUS");
             }
 
-            if (request.PaymentMethod.Equals("Cash", StringComparison.OrdinalIgnoreCase))
-            {
-                if (request.Confirmed != true)
-                {
-                    throw new Exception("CASH_NOT_CONFIRMED");
-                }
-            }
-            else if (request.PaymentMethod.Equals("Transfer", StringComparison.OrdinalIgnoreCase))
-            {
-                if (request.Confirmed != true)
-                {
-                    throw new Exception("TRANSFER_NOT_CONFIRMED");
-                }
-            }
-            else
+            if (!request.PaymentMethod.Equals("Cash", StringComparison.OrdinalIgnoreCase))
             {
                 throw new Exception("INVALID_PAYMENT_METHOD");
+            }
+
+            if (request.Confirmed != true)
+            {
+                throw new Exception("CASH_NOT_CONFIRMED");
             }
 
             if (_context is DbContext dbContext)
@@ -58,9 +49,7 @@ namespace AutoWash.Application.Services
                 using var transaction = await dbContext.Database.BeginTransactionAsync();
                 try
                 {
-                    var paymentMethodEnum = request.PaymentMethod.Equals("Cash", StringComparison.OrdinalIgnoreCase)
-                        ? PaymentMethod.Cash
-                        : PaymentMethod.Transfer;
+                    var paymentMethodEnum = PaymentMethod.Cash;
 
                     var dbTransaction = new Transaction
                     {
