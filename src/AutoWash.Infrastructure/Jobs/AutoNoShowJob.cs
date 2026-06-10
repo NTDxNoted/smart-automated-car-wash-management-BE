@@ -41,11 +41,41 @@ namespace AutoWash.Infrastructure.Jobs
 
                     if (overdueBookings.Any())
                     {
+                        var affectedCustomerIds = overdueBookings.Select(b => b.CustomerID).Distinct().ToList();
+
                         foreach (var booking in overdueBookings)
                         {
                             booking.Status = BookingStatus.NoShow;
                             booking.CompletedAt = DateTime.UtcNow;
                             _logger.LogWarning("Booking {BookingID} automatically marked as NoShow.", booking.BookingID);
+                        }
+
+                        // Lưu trạng thái NoShow trước
+                        await dbContext.SaveChangesAsync(stoppingToken);
+
+                        // Kích hoạt ngay lập tức check Suspension (BR-66) cho các Customer vừa bị NoShow
+                        var thirtyDaysAgo = DateTime.UtcNow.AddDays(-30);
+                        
+                        // Truy vấn tổng số NoShow trong 30 ngày (dựa theo ScheduledTime) của những khách hàng này
+                        var violatorCounts = await dbContext.Bookings
+                            .Where(b => affectedCustomerIds.Contains(b.CustomerID)
+                                        && b.Status == BookingStatus.NoShow 
+                                        && b.ScheduledTime >= thirtyDaysAgo)
+                            .GroupBy(b => b.CustomerID)
+                            .Select(g => new { CustomerID = g.Key, NoShowCount = g.Count() })
+                            .ToListAsync(stoppingToken);
+
+                        foreach (var stat in violatorCounts)
+                        {
+                            if (stat.NoShowCount >= 3)
+                            {
+                                var customer = await dbContext.Customers.FindAsync(new object[] { stat.CustomerID }, stoppingToken);
+                                if (customer != null && (customer.SuspendedUntil == null || customer.SuspendedUntil < DateTime.UtcNow))
+                                {
+                                    customer.SuspendedUntil = DateTime.UtcNow.AddDays(15);
+                                    _logger.LogWarning("BR-66 TRIGGERED: Customer {CustomerID} suspended until {SuspendedUntil} due to {Count} No-Shows in the last 30 days.", customer.CustomerID, customer.SuspendedUntil, stat.NoShowCount);
+                                }
+                            }
                         }
 
                         await dbContext.SaveChangesAsync(stoppingToken);

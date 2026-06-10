@@ -124,6 +124,9 @@ namespace AutoWash.Application.Services
 
             await _context.SaveChangesAsync();
             _logger.LogInformation("Booking {BookingID} status updated from {OldStatus} to {NewStatus}", id, previousStatus, newStatus);
+            
+            // BR-33: Kích hoạt Notification (Mô phỏng qua Log) ngay sau khi thay đổi trạng thái
+            _logger.LogInformation("NOTIFICATION TRIGGERED (BR-33): Đã gửi tin nhắn đến SĐT {Phone} - Trạng thái đơn đặt lịch của bạn đã được cập nhật thành: {NewStatus}.", booking.Phone, newStatus);
 
             return new
             {
