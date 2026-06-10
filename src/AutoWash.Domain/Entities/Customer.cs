@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations.Schema; // Thêm dòng này
 
@@ -11,6 +11,7 @@ namespace AutoWash.Domain.Entities
         public int CustomerID { get; set; }
         public string FullName { get; set; } = string.Empty;
         public string Phone { get; set; } = string.Empty;
+        public string Role { get; set; } = "MEMBER";
         [NotMapped]
         public string Tier { get; set; } = "1";
         public int TierID { get; set; } = 1;
