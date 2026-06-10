@@ -57,6 +57,7 @@ namespace AutoWash.Application.Services
         FullName = request.FullName.Trim(),
         Phone = phone,
         Password = hashedPassword,
+        Role = "MEMBER",
         Tier = "1", // Mặc định là Tier 1 khi đăng ký mới
         IsLocked = false,
         TotalSpending = 0m,
@@ -118,6 +119,7 @@ namespace AutoWash.Application.Services
         CustomerId = customer.CustomerID,
         FullName = customer.FullName,
         Phone = customer.Phone,
+        Role = customer.Role,
         Tier = customer.Tier,
         Token = token,
         IsLocked = customer.IsLocked,
@@ -146,7 +148,7 @@ namespace AutoWash.Application.Services
                 new Claim(ClaimTypes.Name, customer.FullName),
                 new Claim("phone", customer.Phone),
                 new Claim("tier", customer.Tier),
-                new Claim(ClaimTypes.Role, "Member")
+                new Claim(ClaimTypes.Role, customer.Role)
             };
 
       var token = new JwtSecurityToken(
