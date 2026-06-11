@@ -50,6 +50,7 @@ namespace AutoWash.Application.Services
             Customer? customer = null;
             Tier? tier = null;
             LoyaltyAccount? loyalty = null;
+            Vehicle? selectedVehicle = null;
             int? effectiveCustomerId = customerId;
 
             string phone;
@@ -78,19 +79,18 @@ namespace AutoWash.Application.Services
 
                 phone = customer.Phone;
 
-                if (!request.VehicleId.HasValue)
+                if (!request.VehicleId.HasValue || request.VehicleId.Value <= 0)
                     throw new Exception("VEHICLE_REQUIRED: Member phải truyền vehicleId.");
 
-                var vehicle = await _context.Vehicles
+                selectedVehicle = await _context.Vehicles
                     .FirstOrDefaultAsync(v =>
                         v.VehicleID == request.VehicleId.Value &&
                         v.CustomerID == customerId.Value);
 
-                if (vehicle == null)
+                if (selectedVehicle == null)
                     throw new Exception("VEHICLE_NOT_FOUND: Không tìm thấy xe của khách hàng.");
 
-                licensePlate = vehicle.LicensePlate;
-
+                licensePlate = selectedVehicle.LicensePlate;
                 if (request.ScheduledTime > DateTime.UtcNow.AddDays(tier.BookingWindowDays))
                     throw new Exception("BOOKING_WINDOW_VIOLATION: Lịch đặt vượt quá khung thời gian theo tier.");
             }
@@ -126,6 +126,22 @@ namespace AutoWash.Application.Services
                 }
 
                 effectiveCustomerId = customer.CustomerID;
+                selectedVehicle = await _context.Vehicles
+    .FirstOrDefaultAsync(v =>
+        v.CustomerID == customer.CustomerID &&
+        v.LicensePlate == licensePlate);
+
+                if (selectedVehicle == null)
+                {
+                    selectedVehicle = new Vehicle
+                    {
+                        CustomerID = customer.CustomerID,
+                        LicensePlate = licensePlate
+                    };
+
+                    _context.Vehicles.Add(selectedVehicle);
+                    await _context.SaveChangesAsync();
+                }
 
                 tier = await _context.Tiers.FirstOrDefaultAsync(t => t.TierID == customer.TierID);
                 if (tier == null)
@@ -260,6 +276,7 @@ namespace AutoWash.Application.Services
                 CustomerID = effectiveCustomerId ?? 0,
                 Phone = phone,
                 LicensePlate = licensePlate,
+                VehicleID = selectedVehicle!.VehicleID,
                 ServiceID = request.ServiceId,
                 RewardID = request.RewardId,
                 PromotionID = promotion?.PromotionID,

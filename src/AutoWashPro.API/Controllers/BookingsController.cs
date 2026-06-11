@@ -32,29 +32,35 @@ namespace AutoWashPro.API.Controllers
             catch (Exception ex)
             {
                 string message = ex.Message;
+                string? detail = ex.InnerException?.Message;
 
                 if (message.Contains("PENDING_QUOTA_EXCEEDED"))
-                    return StatusCode(422, new { error = "PENDING_QUOTA_EXCEEDED", message });
+                    return StatusCode(422, new { error = "PENDING_QUOTA_EXCEEDED", message, detail });
 
                 if (message.Contains("SLOT_NOT_AVAILABLE"))
-                    return StatusCode(422, new { error = "SLOT_NOT_AVAILABLE", message });
+                    return StatusCode(422, new { error = "SLOT_NOT_AVAILABLE", message, detail });
 
                 if (message.Contains("VEHICLE_BUFFER_VIOLATION"))
-                    return StatusCode(422, new { error = "VEHICLE_BUFFER_VIOLATION", message });
+                    return StatusCode(422, new { error = "VEHICLE_BUFFER_VIOLATION", message, detail });
 
                 if (message.Contains("ADVANCE_NOTICE_VIOLATION"))
-                    return StatusCode(422, new { error = "ADVANCE_NOTICE_VIOLATION", message });
+                    return StatusCode(422, new { error = "ADVANCE_NOTICE_VIOLATION", message, detail });
 
                 if (message.Contains("BOOKING_WINDOW_VIOLATION"))
-                    return StatusCode(422, new { error = "BOOKING_WINDOW_VIOLATION", message });
+                    return StatusCode(422, new { error = "BOOKING_WINDOW_VIOLATION", message, detail });
 
                 if (message.Contains("SUSPENDED_ACCOUNT"))
-                    return StatusCode(422, new { error = "SUSPENDED_ACCOUNT", message });
+                    return StatusCode(422, new { error = "SUSPENDED_ACCOUNT", message, detail });
 
                 if (message.Contains("VEHICLE_REQUIRED"))
-                    return BadRequest(new { error = "VEHICLE_REQUIRED", message });
+                    return BadRequest(new { error = "VEHICLE_REQUIRED", message, detail });
 
-                return BadRequest(new { error = "BAD_REQUEST", message });
+                return BadRequest(new
+                {
+                    error = "BAD_REQUEST",
+                    message,
+                    detail
+                });
             }
         }
 
@@ -105,14 +111,15 @@ namespace AutoWashPro.API.Controllers
             catch (Exception ex)
             {
                 string message = ex.Message;
+                string? detail = ex.InnerException?.Message;
 
                 if (message.Contains("UNAUTHORIZED"))
-                    return Unauthorized(new { error = "UNAUTHORIZED", message });
+                    return Unauthorized(new { error = "UNAUTHORIZED", message, detail });
 
                 if (message.Contains("NOT_FOUND"))
-                    return NotFound(new { error = "NOT_FOUND", message });
+                    return NotFound(new { error = "NOT_FOUND", message, detail });
 
-                return BadRequest(new { error = "BAD_REQUEST", message });
+                return BadRequest(new { error = "BAD_REQUEST", message, detail });
             }
         }
 
@@ -140,14 +147,15 @@ namespace AutoWashPro.API.Controllers
             catch (Exception ex)
             {
                 string message = ex.Message;
+                string? detail = ex.InnerException?.Message;
 
                 if (message.Contains("NOT_FOUND"))
-                    return NotFound(new { error = "NOT_FOUND", message });
+                    return NotFound(new { error = "NOT_FOUND", message, detail });
 
                 if (message.Contains("INVALID_STATUS"))
-                    return BadRequest(new { error = "INVALID_STATUS", message });
+                    return BadRequest(new { error = "INVALID_STATUS", message, detail });
 
-                return BadRequest(new { error = "BAD_REQUEST", message });
+                return BadRequest(new { error = "BAD_REQUEST", message, detail });
             }
         }
 
@@ -167,7 +175,12 @@ namespace AutoWashPro.API.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { error = "BAD_REQUEST", message = ex.Message });
+                return BadRequest(new
+                {
+                    error = "BAD_REQUEST",
+                    message = ex.Message,
+                    detail = ex.InnerException?.Message
+                });
             }
         }
     }
