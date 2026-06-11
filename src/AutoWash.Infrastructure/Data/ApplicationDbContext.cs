@@ -22,6 +22,7 @@ namespace AutoWash.Infrastructure.Data
         public DbSet<Transaction> Transactions { get; set; }
         public DbSet<Promotion> Promotions { get; set; }
         public DbSet<CustomerPromotion> CustomerPromotions { get; set; }
+        public DbSet<VwCustomerRfm> VwCustomerRfm { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -62,10 +63,31 @@ namespace AutoWash.Infrastructure.Data
                 entity.HasIndex(e => e.Phone).IsUnique();
             });
 
+            builder.Entity<VwCustomerRfm>(entity =>
+            {
+                entity.ToView("vw_customer_rfm");
+                entity.HasNoKey();
+
+                entity.Property(e => e.CustomerId).HasColumnName("customerid");
+                entity.Property(e => e.FullName).HasColumnName("fullname");
+                entity.Property(e => e.Phone).HasColumnName("phone");
+                entity.Property(e => e.CurrentTier).HasColumnName("currenttier");
+                entity.Property(e => e.RecencyDays).HasColumnName("recency_days");
+                entity.Property(e => e.Frequency).HasColumnName("frequency");
+                entity.Property(e => e.MonetaryTotal).HasColumnName("monetary_total");
+                entity.Property(e => e.TotalPoints).HasColumnName("totalpoints");
+                entity.Property(e => e.TotalSpending).HasColumnName("totalspending");
+                entity.Property(e => e.MemberSince).HasColumnName("membersince");
+            });
+
             builder.Entity<LoyaltyAccount>(entity =>
             {
                 entity.ToTable("loyaltyaccount");
                 entity.HasKey(e => e.LoyaltyID);
+                entity.HasMany(e => e.PointTransactions)
+                      .WithOne()
+                      .HasForeignKey(pt => pt.LoyaltyID)
+                      .OnDelete(DeleteBehavior.Cascade);
 
                 entity.Property(e => e.LoyaltyID).HasColumnName("loyaltyid");
                 entity.Property(e => e.CustomerID).HasColumnName("customerid");
