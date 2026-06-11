@@ -16,6 +16,18 @@ var builder = WebApplication.CreateBuilder(args);
 // 1. Thêm dịch vụ Controller
 builder.Services.AddControllers();
 
+// CORS — cho phép frontend dev server gọi API
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("FrontendDev", policy =>
+    {
+        policy.WithOrigins("http://localhost:5173", "http://localhost:3000")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
+
 // 2. Thêm dịch vụ Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -78,6 +90,10 @@ builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IPointService, PointService>();
 builder.Services.AddScoped<TransactionRepository>();
 
+// ISSUE-10: Loyalty Points & Redemption (PointExpiryJob + repository)
+builder.Services.AddScoped<PointTransactionRepository>();
+builder.Services.AddHostedService<PointExpiryJob>();
+
 // ISSUE-05: Promotion Management
 builder.Services.AddScoped<IPromotionService, PromotionService>();
 
@@ -92,6 +108,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseCors("FrontendDev");
 
 // ISSUE-01: JWT Middleware
 app.UseMiddleware<JwtMiddleware>();
