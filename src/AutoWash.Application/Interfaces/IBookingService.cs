@@ -5,6 +5,7 @@ namespace AutoWash.Application.Interfaces
 {
     public interface IBookingsService // Đổi tên thành IBookingsService (số nhiều) cho đúng convention
     {
+        Task<BookingResponse> CreateBookingAsync(CreateBookingRequest request, int? customerId = null);
         // Cập nhật: cho phép customerId là null (dành cho Guest)
         Task<PagedResponse<BookingResponseDto>> GetCustomerBookingsAsync(int? customerId, string? guestPhone, string? status, int page, int pageSize);
 
