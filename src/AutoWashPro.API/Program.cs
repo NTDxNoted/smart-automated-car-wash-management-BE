@@ -94,6 +94,8 @@ builder.Services.AddScoped<TransactionRepository>();
 builder.Services.AddScoped<PointTransactionRepository>();
 builder.Services.AddHostedService<PointExpiryJob>();
 
+// ISSUE-05: Promotion Management
+builder.Services.AddScoped<IPromotionService, PromotionService>();
 builder.Services.AddAuthorization();
 var app = builder.Build();
 

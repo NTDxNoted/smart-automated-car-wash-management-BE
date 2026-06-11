@@ -19,9 +19,9 @@ namespace AutoWash.Infrastructure.Data
         public DbSet<PointTransaction> PointTransactions { get; set; }
         public DbSet<Service> Services { get; set; }
         public DbSet<RewardsCatalog> RewardsCatalog { get; set; }
+        public DbSet<Transaction> Transactions { get; set; }
         public DbSet<Promotion> Promotions { get; set; }
         public DbSet<CustomerPromotion> CustomerPromotions { get; set; }
-        public DbSet<Transaction> Transactions { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -137,35 +137,6 @@ namespace AutoWash.Infrastructure.Data
                 // Bảng service hiện tại không có cột createdat
             });
 
-            builder.Entity<Promotion>(entity =>
-            {
-                entity.ToTable("promotion");
-                entity.HasKey(e => e.PromotionID);
-
-                entity.Property(e => e.PromotionID).HasColumnName("promotionid");
-                entity.Property(e => e.Title).HasColumnName("title");
-                entity.Property(e => e.PromoCode).HasColumnName("promocode");
-                entity.Property(e => e.MinTierID).HasColumnName("mintierid");
-                entity.Property(e => e.DiscountType).HasColumnName("discounttype");
-                entity.Property(e => e.DiscountValue).HasColumnName("discountvalue");
-                entity.Property(e => e.MaxUsage).HasColumnName("maxusage");
-                entity.Property(e => e.StartDate).HasColumnName("startdate");
-                entity.Property(e => e.EndDate).HasColumnName("enddate");
-                entity.Property(e => e.IsActive).HasColumnName("isactive");
-            });
-
-            builder.Entity<CustomerPromotion>(entity =>
-            {
-                entity.ToTable("customerpromotion");
-                entity.HasKey(e => e.ID);
-
-                entity.Property(e => e.ID).HasColumnName("id");
-                entity.Property(e => e.CustomerID).HasColumnName("customerid");
-                entity.Property(e => e.PromotionID).HasColumnName("promotionid");
-                entity.Property(e => e.BookingID).HasColumnName("bookingid");
-                entity.Property(e => e.UsedAt).HasColumnName("usedat");
-                entity.Property(e => e.DiscountAmountActual).HasColumnName("discountamountactual");
-            });
 
             builder.Entity<RewardsCatalog>(entity =>
             {
@@ -198,6 +169,40 @@ namespace AutoWash.Infrastructure.Data
                     .HasDatabaseName("idx_txn_booking_paid")
                     .HasFilter("\"status\" = 'Paid'")
                     .IsUnique();
+            });
+
+            builder.Entity<Promotion>(entity =>
+            {
+                entity.ToTable("promotion", t => t.HasCheckConstraint("CK_Promotion_DiscountType", "discounttype IN ('Percentage','Fixed_Amount')"));
+                entity.HasKey(e => e.PromotionID);
+
+                entity.Property(e => e.PromotionID).HasColumnName("promotionid");
+                entity.Property(e => e.Title).HasColumnName("title");
+                entity.Property(e => e.PromoCode).HasColumnName("promocode");
+                entity.Property(e => e.MinTierID).HasColumnName("mintierid");
+                entity.Property(e => e.DiscountType).HasColumnName("discounttype");
+                entity.Property(e => e.DiscountValue).HasColumnName("discountvalue");
+                entity.Property(e => e.MaxUsage).HasColumnName("maxusage");
+                entity.Property(e => e.StartDate).HasColumnName("startdate");
+                entity.Property(e => e.EndDate).HasColumnName("enddate");
+                entity.Property(e => e.IsActive).HasColumnName("isactive");
+                entity.Property(e => e.MinOrderValue).HasColumnName("minordervalue");
+                entity.Property(e => e.MaxDiscountAmount).HasColumnName("maxdiscountamount");
+
+                entity.HasIndex(e => e.PromoCode).IsUnique();
+            });
+
+            builder.Entity<CustomerPromotion>(entity =>
+            {
+                entity.ToTable("customerpromotion");
+                entity.HasKey(e => e.ID);
+
+                entity.Property(e => e.ID).HasColumnName("id");
+                entity.Property(e => e.CustomerID).HasColumnName("customerid");
+                entity.Property(e => e.PromotionID).HasColumnName("promotionid");
+                entity.Property(e => e.BookingID).HasColumnName("bookingid");
+                entity.Property(e => e.UsedAt).HasColumnName("usedat");
+                entity.Property(e => e.DiscountAmountActual).HasColumnName("discountamountactual");
             });
         }
     }
