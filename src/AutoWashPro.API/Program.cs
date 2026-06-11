@@ -77,6 +77,10 @@ builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IPointService, PointService>();
 builder.Services.AddScoped<TransactionRepository>();
 
+// ISSUE-10: Loyalty Points & Redemption (PointExpiryJob + repository)
+builder.Services.AddScoped<PointTransactionRepository>();
+builder.Services.AddHostedService<PointExpiryJob>();
+
 builder.Services.AddAuthorization();
 var app = builder.Build();
 
