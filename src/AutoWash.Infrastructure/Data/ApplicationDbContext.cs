@@ -19,6 +19,8 @@ namespace AutoWash.Infrastructure.Data
         public DbSet<PointTransaction> PointTransactions { get; set; }
         public DbSet<Service> Services { get; set; }
         public DbSet<RewardsCatalog> RewardsCatalog { get; set; }
+        public DbSet<Promotion> Promotions { get; set; }
+        public DbSet<CustomerPromotion> CustomerPromotions { get; set; }
         public DbSet<Transaction> Transactions { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
@@ -40,7 +42,9 @@ namespace AutoWash.Infrastructure.Data
 
             builder.Entity<Customer>(entity =>
             {
-                entity.ToTable("customer", t => t.HasCheckConstraint("CK_Customer_Role", "role IN ('MEMBER', 'ADMIN')"));
+                entity.ToTable("customer", t =>
+                    t.HasCheckConstraint("CK_Customer_Role", "role IN ('MEMBER', 'ADMIN')"));
+
                 entity.HasKey(e => e.CustomerID);
 
                 entity.Property(e => e.CustomerID).HasColumnName("customerid");
@@ -87,7 +91,21 @@ namespace AutoWash.Infrastructure.Data
                 entity.HasKey(e => e.BookingID);
 
                 entity.Property(e => e.BookingID).HasColumnName("bookingid");
+                entity.Property(e => e.CustomerID).HasColumnName("customerid");
+                entity.Property(e => e.Phone).HasColumnName("phone");
+                entity.Property(e => e.LicensePlate).HasColumnName("licenseplate");
+                entity.Property(e => e.ServiceID).HasColumnName("serviceid");
+                entity.Property(e => e.RewardID).HasColumnName("rewardid");
+                entity.Property(e => e.PromotionID).HasColumnName("promotionid");
+                entity.Property(e => e.ScheduledTime).HasColumnName("scheduledtime");
                 entity.Property(e => e.Status).HasColumnName("status").HasConversion<string>();
+                entity.Property(e => e.BaseAmount).HasColumnName("baseamount");
+                entity.Property(e => e.DiscountApplied).HasColumnName("discountapplied");
+                entity.Property(e => e.FinalAmount).HasColumnName("finalamount");
+                entity.Property(e => e.PointsEarned).HasColumnName("pointsearned");
+                entity.Property(e => e.PointsRedeemed).HasColumnName("pointsredeemed");
+                entity.Property(e => e.CreatedAt).HasColumnName("createdat");
+                entity.Property(e => e.CompletedAt).HasColumnName("completedat");
             });
 
             builder.Entity<PointTransaction>(entity =>
@@ -96,7 +114,11 @@ namespace AutoWash.Infrastructure.Data
                 entity.HasKey(e => e.PointTxnID);
 
                 entity.Property(e => e.PointTxnID).HasColumnName("pointtxnid");
+                entity.Property(e => e.LoyaltyID).HasColumnName("loyaltyid");
+                entity.Property(e => e.Points).HasColumnName("points");
                 entity.Property(e => e.Type).HasColumnName("type").HasConversion<string>();
+                entity.Property(e => e.RefBookingID).HasColumnName("refbookingid");
+                entity.Property(e => e.CreatedAt).HasColumnName("createdat");
             });
 
             builder.Entity<Service>(entity =>
@@ -105,6 +127,44 @@ namespace AutoWash.Infrastructure.Data
                 entity.HasKey(e => e.ServiceID);
 
                 entity.Property(e => e.ServiceID).HasColumnName("serviceid");
+                entity.Property(e => e.ServiceName).HasColumnName("servicename");
+                entity.Property(e => e.ServiceCategory).HasColumnName("servicecategory");
+                entity.Property(e => e.Description).HasColumnName("description");
+                entity.Property(e => e.Price).HasColumnName("price");
+                entity.Property(e => e.Duration).HasColumnName("duration");
+                entity.Property(e => e.Status).HasColumnName("status");
+
+                // Bảng service hiện tại không có cột createdat
+            });
+
+            builder.Entity<Promotion>(entity =>
+            {
+                entity.ToTable("promotion");
+                entity.HasKey(e => e.PromotionID);
+
+                entity.Property(e => e.PromotionID).HasColumnName("promotionid");
+                entity.Property(e => e.Title).HasColumnName("title");
+                entity.Property(e => e.PromoCode).HasColumnName("promocode");
+                entity.Property(e => e.MinTierID).HasColumnName("mintierid");
+                entity.Property(e => e.DiscountType).HasColumnName("discounttype");
+                entity.Property(e => e.DiscountValue).HasColumnName("discountvalue");
+                entity.Property(e => e.MaxUsage).HasColumnName("maxusage");
+                entity.Property(e => e.StartDate).HasColumnName("startdate");
+                entity.Property(e => e.EndDate).HasColumnName("enddate");
+                entity.Property(e => e.IsActive).HasColumnName("isactive");
+            });
+
+            builder.Entity<CustomerPromotion>(entity =>
+            {
+                entity.ToTable("customerpromotion");
+                entity.HasKey(e => e.ID);
+
+                entity.Property(e => e.ID).HasColumnName("id");
+                entity.Property(e => e.CustomerID).HasColumnName("customerid");
+                entity.Property(e => e.PromotionID).HasColumnName("promotionid");
+                entity.Property(e => e.BookingID).HasColumnName("bookingid");
+                entity.Property(e => e.UsedAt).HasColumnName("usedat");
+                entity.Property(e => e.DiscountAmountActual).HasColumnName("discountamountactual");
             });
 
             builder.Entity<RewardsCatalog>(entity =>
@@ -117,6 +177,7 @@ namespace AutoWash.Infrastructure.Data
                 entity.Property(e => e.PointsRequired).HasColumnName("pointsrequired");
                 entity.Property(e => e.DiscountAmount).HasColumnName("discountvalue");
                 entity.Property(e => e.IsActive).HasColumnName("isactive");
+
                 entity.Ignore(e => e.Description);
                 entity.Ignore(e => e.CreatedAt);
             });

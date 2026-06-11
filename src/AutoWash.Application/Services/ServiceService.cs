@@ -61,8 +61,7 @@ namespace AutoWash.Application.Services
                 Description = request.Description,
                 Price = request.Price,
                 Duration = request.Duration,
-                Status = "Active",
-                CreatedAt = DateTime.UtcNow
+                Status = "Active"
             };
 
             _context.Services.Add(service);
