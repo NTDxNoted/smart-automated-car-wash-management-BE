@@ -3,19 +3,32 @@ using AutoWash.Application.DTOs;
 
 namespace AutoWash.Application.Interfaces
 {
-    public interface IBookingsService // Đổi tên thành IBookingsService (số nhiều) cho đúng convention
+    public interface IBookingsService
     {
-        // Cập nhật: cho phép customerId là null (dành cho Guest)
-        Task<PagedResponse<BookingResponseDto>> GetCustomerBookingsAsync(int? customerId, string? guestPhone, string? status, int page, int pageSize);
+        // POST /api/Bookings
+        Task<BookingResponseDto> CreateBookingAsync(CreateBookingRequest request, int? customerId);
 
-        // Cập nhật: cho phép customerId là null
-        Task<BookingResponseDto> GetBookingByIdAsync(int bookingId, int? customerId, string? guestPhone);
+        // GET /api/Bookings
+        Task<PagedResponse<BookingResponseDto>> GetCustomerBookingsAsync(
+            int? customerId,
+            string? guestPhone,
+            string? status,
+            int page,
+            int pageSize);
 
-        // Hàm Cancel của bạn đã chuẩn rồi
-        Task<CancelBookingResponseDto> CancelBookingAsync(int bookingId, int? customerId, string? guestPhone);
-        Task GetCustomerBookingsAsync(int customerId, string? status, int page, int pageSize);
+        // GET /api/Bookings/{id}
+        Task<BookingResponseDto> GetBookingByIdAsync(
+            int bookingId,
+            int? customerId,
+            string? guestPhone);
 
-        // BR-21: Staff/Admin đánh dấu booking hoàn thành → trigger upgrade tier
+        // POST /api/Bookings/{id}/cancel
+        Task<CancelBookingResponseDto> CancelBookingAsync(
+            int bookingId,
+            int? customerId,
+            string? guestPhone);
+
+        // POST /api/Bookings/{id}/complete
         Task<BookingResponseDto> CompleteBookingAsync(int bookingId);
     }
 }
