@@ -56,6 +56,7 @@ builder.Services.AddAuthentication(options =>
 });
 
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IAdminAuthService, AdminAuthService>();
 
 // Nối IBookingService tới BookingService
 builder.Services.AddScoped<IBookingsService, BookingService>();
@@ -108,6 +109,7 @@ app.UseCors("FrontendDev");
 
 // ISSUE-01: JWT Middleware
 app.UseMiddleware<JwtMiddleware>();
+app.UseMiddleware<RoleAuthorizationMiddleware>();
 
 app.UseAuthentication();
 app.UseAuthorization();

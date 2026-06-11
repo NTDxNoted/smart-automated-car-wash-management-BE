@@ -40,13 +40,14 @@ namespace AutoWash.Infrastructure.Data
 
             builder.Entity<Customer>(entity =>
             {
-                entity.ToTable("customer");
+                entity.ToTable("customer", t => t.HasCheckConstraint("CK_Customer_Role", "role IN ('MEMBER', 'ADMIN')"));
                 entity.HasKey(e => e.CustomerID);
 
                 entity.Property(e => e.CustomerID).HasColumnName("customerid");
                 entity.Property(e => e.FullName).HasColumnName("fullname");
                 entity.Property(e => e.Phone).HasColumnName("phone");
                 entity.Property(e => e.Password).HasColumnName("password");
+                entity.Property(e => e.Role).HasColumnName("role");
                 entity.Property(e => e.TierID).HasColumnName("tierid");
                 entity.Property(e => e.TotalSpending).HasColumnName("totalspending");
                 entity.Property(e => e.LastVisit).HasColumnName("lastvisit");
