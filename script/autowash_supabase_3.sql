@@ -143,6 +143,8 @@ CREATE TABLE Transaction (
     CONSTRAINT fk_txn_booking FOREIGN KEY (BookingID) REFERENCES Booking(BookingID)
         ON UPDATE CASCADE ON DELETE RESTRICT
 );
+CREATE UNIQUE INDEX idx_txn_booking_paid ON Transaction(BookingID) WHERE Status = 'Paid';
+
 
 -- ── 9. LoyaltyAccount ───────────────────────────────────
 CREATE TABLE LoyaltyAccount (

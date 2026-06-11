@@ -144,6 +144,24 @@ namespace AutoWash.Infrastructure.Data
 
                 entity.Property(e => e.RewardID).HasColumnName("rewardid");
             });
+
+            builder.Entity<Transaction>(entity =>
+            {
+                entity.ToTable("transaction");
+                entity.HasKey(e => e.TransactionID);
+
+                entity.Property(e => e.TransactionID).HasColumnName("transactionid");
+                entity.Property(e => e.BookingID).HasColumnName("bookingid");
+                entity.Property(e => e.Amount).HasColumnName("amount");
+                entity.Property(e => e.PaymentMethod).HasColumnName("paymentmethod").HasConversion<string>();
+                entity.Property(e => e.PaidAt).HasColumnName("paidat");
+                entity.Property(e => e.Status).HasColumnName("status").HasConversion<string>();
+
+                entity.HasIndex(e => e.BookingID)
+                    .HasDatabaseName("idx_txn_booking_paid")
+                    .HasFilter("status = 'Paid'")
+                    .IsUnique();
+            });
         }
     }
 }
