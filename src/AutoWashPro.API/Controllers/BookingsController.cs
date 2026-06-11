@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using AutoWash.Application.Interfaces;
@@ -80,6 +80,24 @@ namespace AutoWashPro.API.Controllers // Nhớ giữ nguyên namespace hiện t�
                 if (message.Contains("NOT_FOUND")) return NotFound(new { error = "NOT_FOUND", message = message });
                 if (message.Contains("INVALID_STATUS")) return BadRequest(new { error = "INVALID_STATUS", message = message });
                 return BadRequest(new { error = "BAD_REQUEST", message = message });
+            }
+        }
+
+        // 5. GET /api/bookings/available-slots
+        [HttpGet("available-slots")]
+        public async Task<IActionResult> GetAvailableSlots([FromQuery] string? date = null, [FromQuery] string? licensePlate = null)
+        {
+            try
+            {
+                var customerIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                int? customerId = customerIdClaim != null ? int.Parse(customerIdClaim) : null;
+
+                var result = await _bookingsService.GetAvailableSlotsAsync(customerId, date, licensePlate);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = "BAD_REQUEST", message = ex.Message });
             }
         }
     }
