@@ -250,12 +250,32 @@ namespace AutoWash.Application.Services
             return new BookingResponseDto
             {
                 BookingId = booking.BookingID,
+                Phone = booking.Phone,
                 LicensePlate = booking.LicensePlate,
-                ServiceName = service.ServiceName,
+                Service = new ServiceResponse
+                {
+                    ServiceId = service.ServiceID,
+                    ServiceName = service.ServiceName,
+                    Duration = service.Duration,
+                    Price = service.Price,
+                    ServiceCategory = service.ServiceCategory,
+                    Status = service.Status,
+                    Description = service.Description
+                },
                 ScheduledTime = booking.ScheduledTime,
                 Status = booking.Status.ToString(),
+                Invoice = new InvoiceResponseDto
+                {
+                    BaseAmount = baseAmount,
+                    TierDiscount = tierDiscount,
+                    RewardDiscount = rewardDiscount,
+                    PromotionDiscount = promotionDiscount,
+                    DiscountApplied = discountApplied,
+                    FinalAmount = finalAmount
+                },
                 FinalAmount = booking.FinalAmount,
-                PointsEarned = booking.PointsEarned
+                PointsEarned = booking.PointsEarned,
+                CreatedAt = booking.CreatedAt
             };
         }
 
