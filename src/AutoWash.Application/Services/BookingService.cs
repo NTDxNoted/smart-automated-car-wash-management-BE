@@ -35,12 +35,16 @@ namespace AutoWash.Application.Services
             if (request.ScheduledTime <= DateTime.UtcNow.AddMinutes(60))
                 throw new Exception("ADVANCE_NOTICE_VIOLATION: Phải đặt lịch trước ít nhất 60 phút.");
 
+            Customer? customer = null;
+            Tier? tier = null;
+            LoyaltyAccount? loyalty = null;
+
             string phone;
             string licensePlate;
 
             if (customerId.HasValue)
             {
-                var customer = await _context.Customers
+                customer = await _context.Customers
                     .FirstOrDefaultAsync(c => c.CustomerID == customerId.Value);
 
                 if (customer == null)
@@ -49,6 +53,12 @@ namespace AutoWash.Application.Services
                 if (customer.SuspendedUntil.HasValue &&
                     customer.SuspendedUntil.Value > DateTime.UtcNow)
                     throw new Exception("SUSPENDED_ACCOUNT: Tài khoản đang bị tạm khóa.");
+
+                tier = await _context.Tiers.FirstOrDefaultAsync(t => t.TierID == customer.TierID);
+                if (tier == null)
+                    throw new Exception("TIER_NOT_FOUND: Không tìm thấy tier của khách hàng.");
+
+                loyalty = await _context.LoyaltyAccounts.FirstOrDefaultAsync(l => l.CustomerID == customer.CustomerID);
 
                 phone = customer.Phone;
 
@@ -64,6 +74,9 @@ namespace AutoWash.Application.Services
                     throw new Exception("VEHICLE_NOT_FOUND: Không tìm thấy xe của khách hàng.");
 
                 licensePlate = vehicle.LicensePlate;
+
+                if (request.ScheduledTime > DateTime.UtcNow.AddDays(tier.BookingWindowDays))
+                    throw new Exception("BOOKING_WINDOW_VIOLATION: Lịch đặt vượt quá khung thời gian theo tier.");
             }
             else
             {
@@ -130,7 +143,56 @@ namespace AutoWash.Application.Services
                 throw new Exception("SERVICE_NOT_FOUND: Không tìm thấy dịch vụ.");
 
             decimal baseAmount = service.Price;
-            decimal finalAmount = baseAmount;
+            decimal tierDiscount = 0m;
+            decimal rewardDiscount = 0m;
+            decimal promotionDiscount = 0m;
+
+            if (tier != null)
+            {
+                tierDiscount = Math.Round(baseAmount * (tier.DiscountRate / 100m), 0);
+            }
+
+            RewardsCatalog? reward = null;
+            if (request.RewardId.HasValue)
+            {
+                reward = await _context.RewardsCatalog.FirstOrDefaultAsync(r => r.RewardID == request.RewardId.Value && r.IsActive);
+                if (reward == null)
+                    throw new Exception("REWARD_NOT_FOUND: Không tìm thấy ưu đãi điểm.");
+
+                if (loyalty == null || loyalty.TotalPoints < reward.PointsRequired)
+                    throw new Exception("INSUFFICIENT_POINTS: Điểm không đủ để dùng ưu đãi này.");
+
+                rewardDiscount = Math.Min(reward.DiscountAmount, baseAmount * 0.50m);
+
+                if (rewardDiscount < 0)
+                    rewardDiscount = 0;
+            }
+
+            Promotion? promotion = null;
+            if (!string.IsNullOrWhiteSpace(request.PromoCode))
+            {
+                promotion = await _context.Promotions.FirstOrDefaultAsync(p => p.PromoCode == request.PromoCode.Trim().ToUpperInvariant() && p.IsActive);
+                if (promotion == null)
+                    throw new Exception("PROMO_NOT_FOUND: Mã khuyến mãi không tồn tại.");
+
+                if (promotion.StartDate > DateTime.UtcNow.Date || promotion.EndDate < DateTime.UtcNow.Date)
+                    throw new Exception("PROMO_EXPIRED: Mã khuyến mãi đã hết hạn.");
+
+                if (customer != null && promotion.MinTierID.HasValue && customer.TierID < promotion.MinTierID.Value)
+                    throw new Exception("PROMO_TIER_NOT_ELIGIBLE: Bạn chưa đủ tier để dùng mã này.");
+
+                var usedPromoCount = await _context.CustomerPromotions.CountAsync(cp => cp.PromotionID == promotion.PromotionID);
+                if (promotion.MaxUsage.HasValue && usedPromoCount >= promotion.MaxUsage.Value)
+                    throw new Exception("PROMO_USAGE_LIMIT: Mã khuyến mãi đã hết lượt dùng.");
+
+                if (promotion.DiscountType == "Percentage")
+                    promotionDiscount = Math.Round(baseAmount * (promotion.DiscountValue / 100m), 0);
+                else
+                    promotionDiscount = promotion.DiscountValue;
+            }
+
+            decimal discountApplied = tierDiscount + rewardDiscount + promotionDiscount;
+            decimal finalAmount = Math.Max(0, baseAmount - discountApplied);
 
             var booking = new Booking
             {
@@ -138,18 +200,52 @@ namespace AutoWash.Application.Services
                 Phone = phone,
                 LicensePlate = licensePlate,
                 ServiceID = request.ServiceId,
+                RewardID = request.RewardId,
+                PromotionID = promotion?.PromotionID,
                 ScheduledTime = request.ScheduledTime,
                 Status = BookingStatus.Pending,
-
                 BaseAmount = baseAmount,
+                DiscountApplied = discountApplied,
                 FinalAmount = finalAmount,
-
-                PointsEarned = (int)(finalAmount / 10000),
+                PointsEarned = (int)Math.Max(0, Math.Floor(finalAmount / 10000m)),
+                PointsRedeemed = reward?.PointsRequired ?? 0,
                 CreatedAt = DateTime.UtcNow
             };
 
             _context.Bookings.Add(booking);
             await _context.SaveChangesAsync();
+
+            if (reward != null && loyalty != null)
+            {
+                loyalty.TotalPoints -= reward.PointsRequired;
+                loyalty.LastUpdated = DateTime.UtcNow;
+
+                _context.PointTransactions.Add(new PointTransaction
+                {
+                    LoyaltyID = loyalty.LoyaltyID,
+                    Points = -reward.PointsRequired,
+                    Type = PointTransactionType.Redeem,
+                    RefBookingID = booking.BookingID,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            if (promotion != null && customer != null)
+            {
+                _context.CustomerPromotions.Add(new CustomerPromotion
+                {
+                    CustomerID = customer.CustomerID,
+                    PromotionID = promotion.PromotionID,
+                    BookingID = booking.BookingID,
+                    UsedAt = DateTime.UtcNow,
+                    DiscountAmountActual = promotionDiscount
+                });
+            }
+
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("[BR-33] Booking created BookingID={BookingId}, CustomerID={CustomerId}, Amount={Amount}",
+                booking.BookingID, customerId ?? 0, booking.FinalAmount);
 
             return new BookingResponseDto
             {

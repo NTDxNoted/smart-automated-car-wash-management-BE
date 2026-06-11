@@ -19,6 +19,8 @@ namespace AutoWash.Infrastructure.Data
         public DbSet<PointTransaction> PointTransactions { get; set; }
         public DbSet<Service> Services { get; set; }
         public DbSet<RewardsCatalog> RewardsCatalog { get; set; }
+        public DbSet<Promotion> Promotions { get; set; }
+        public DbSet<CustomerPromotion> CustomerPromotions { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -103,6 +105,36 @@ namespace AutoWash.Infrastructure.Data
                 entity.HasKey(e => e.ServiceID);
 
                 entity.Property(e => e.ServiceID).HasColumnName("serviceid");
+            });
+
+            builder.Entity<Promotion>(entity =>
+            {
+                entity.ToTable("promotion");
+                entity.HasKey(e => e.PromotionID);
+
+                entity.Property(e => e.PromotionID).HasColumnName("promotionid");
+                entity.Property(e => e.Title).HasColumnName("title");
+                entity.Property(e => e.PromoCode).HasColumnName("promocode");
+                entity.Property(e => e.MinTierID).HasColumnName("mintierid");
+                entity.Property(e => e.DiscountType).HasColumnName("discounttype");
+                entity.Property(e => e.DiscountValue).HasColumnName("discountvalue");
+                entity.Property(e => e.MaxUsage).HasColumnName("maxusage");
+                entity.Property(e => e.StartDate).HasColumnName("startdate");
+                entity.Property(e => e.EndDate).HasColumnName("enddate");
+                entity.Property(e => e.IsActive).HasColumnName("isactive");
+            });
+
+            builder.Entity<CustomerPromotion>(entity =>
+            {
+                entity.ToTable("customerpromotion");
+                entity.HasKey(e => e.ID);
+
+                entity.Property(e => e.ID).HasColumnName("id");
+                entity.Property(e => e.CustomerID).HasColumnName("customerid");
+                entity.Property(e => e.PromotionID).HasColumnName("promotionid");
+                entity.Property(e => e.BookingID).HasColumnName("bookingid");
+                entity.Property(e => e.UsedAt).HasColumnName("usedat");
+                entity.Property(e => e.DiscountAmountActual).HasColumnName("discountamountactual");
             });
 
             builder.Entity<RewardsCatalog>(entity =>

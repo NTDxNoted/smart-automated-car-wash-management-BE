@@ -13,6 +13,8 @@ namespace AutoWash.Application.Interfaces
         DbSet<PointTransaction> PointTransactions { get; }
         DbSet<Service> Services { get; }
         DbSet<RewardsCatalog> RewardsCatalog { get; }
+        DbSet<Promotion> Promotions { get; }
+        DbSet<CustomerPromotion> CustomerPromotions { get; }
         DbSet<Tier> Tiers { get; }
         DbSet<Customer> Customers { get; }
         DbSet<Vehicle> Vehicles { get; }
