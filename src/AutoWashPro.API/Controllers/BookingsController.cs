@@ -66,7 +66,7 @@ namespace AutoWashPro.API.Controllers // Nhớ giữ nguyên namespace hiện t�
         public async Task<IActionResult> CompleteBooking(int id)
         {
             var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
-            if (role != "Admin" && role != "Staff")
+            if (!string.Equals(role,"Admin",System.StringComparison.OrdinalIgnoreCase) && !string.Equals(role,"Staff",System.StringComparison.OrdinalIgnoreCase))
                 return StatusCode(403, new { error = "FORBIDDEN", message = "Chỉ Admin hoặc Staff mới được đánh dấu hoàn thành." });
 
             try

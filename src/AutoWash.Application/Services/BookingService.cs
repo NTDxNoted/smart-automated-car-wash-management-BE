@@ -16,12 +16,15 @@ namespace AutoWash.Application.Services
         private readonly IApplicationDbContext _context;
         private readonly ILogger<BookingService> _logger;
         private readonly ITierService _tierService;
+        private readonly IPointService _pointService;
 
-        public BookingService(IApplicationDbContext context, ILogger<BookingService> logger, ITierService tierService)
+        public BookingService(IApplicationDbContext context, ILogger<BookingService> logger,
+            ITierService tierService, IPointService pointService)
         {
             _context = context;
             _logger = logger;
             _tierService = tierService;
+            _pointService = pointService;
         }
 
         // 1. GET DANH SÁCH (Phân trang & Filter)
@@ -149,6 +152,9 @@ namespace AutoWash.Application.Services
 
                     // BR-21: evaluate upgrade real-time
                     await _tierService.EvaluateUpgradeAsync(customer.CustomerID);
+
+                    // BR-55: tích điểm cho member (BR-53: MIN(FLOOR(FinalAmount/10000), 500))
+                    await _pointService.EarnPointsAsync(booking.BookingID);
 
                     _logger.LogInformation("[CompleteBooking] BookingID={Id} completed, CustomerID={Cid}, Amount={Amt}",
                         bookingId, customer.CustomerID, booking.FinalAmount);

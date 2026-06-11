@@ -108,10 +108,16 @@ namespace AutoWash.Infrastructure.Data
 
             builder.Entity<RewardsCatalog>(entity =>
             {
-                entity.ToTable("rewardscatalog");
+                entity.ToTable("rewards_catalog");
                 entity.HasKey(e => e.RewardID);
 
                 entity.Property(e => e.RewardID).HasColumnName("rewardid");
+                entity.Property(e => e.RewardName).HasColumnName("rewardname");
+                entity.Property(e => e.PointsRequired).HasColumnName("pointsrequired");
+                entity.Property(e => e.DiscountAmount).HasColumnName("discountvalue");
+                entity.Property(e => e.IsActive).HasColumnName("isactive");
+                entity.Ignore(e => e.Description);
+                entity.Ignore(e => e.CreatedAt);
             });
 
             builder.Entity<Transaction>(entity =>
