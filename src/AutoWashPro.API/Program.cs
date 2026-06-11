@@ -78,6 +78,9 @@ builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IPointService, PointService>();
 builder.Services.AddScoped<TransactionRepository>();
 
+// ISSUE-05: Promotion Management
+builder.Services.AddScoped<IPromotionService, PromotionService>();
+
 builder.Services.AddAuthorization();
 var app = builder.Build();
 
