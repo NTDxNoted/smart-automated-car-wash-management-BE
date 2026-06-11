@@ -1,4 +1,5 @@
-﻿using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using AutoWash.Application.DTOs;
 
 namespace AutoWash.Application.Interfaces
@@ -30,5 +31,8 @@ namespace AutoWash.Application.Interfaces
 
         // POST /api/Bookings/{id}/complete
         Task<BookingResponseDto> CompleteBookingAsync(int bookingId);
+
+        // Lấy danh sách time slots khả dụng
+        Task<IEnumerable<AvailableSlotResponse>> GetAvailableSlotsAsync(int? customerId, string? dateStr, string? licensePlate);
     }
 }

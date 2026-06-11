@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -15,15 +16,26 @@ namespace AutoWash.Application.Services
         private readonly IApplicationDbContext _context;
         private readonly ILogger<BookingService> _logger;
         private readonly ITierService _tierService;
+        private readonly IPointService? _pointService;
 
         public BookingService(
             IApplicationDbContext context,
             ILogger<BookingService> logger,
             ITierService tierService)
+            : this(context, logger, tierService, null)
+        {
+        }
+
+        public BookingService(
+            IApplicationDbContext context,
+            ILogger<BookingService> logger,
+            ITierService tierService,
+            IPointService? pointService)
         {
             _context = context;
             _logger = logger;
             _tierService = tierService;
+            _pointService = pointService;
         }
 
         // POST /api/Bookings
@@ -38,6 +50,7 @@ namespace AutoWash.Application.Services
             Customer? customer = null;
             Tier? tier = null;
             LoyaltyAccount? loyalty = null;
+            int? effectiveCustomerId = customerId;
 
             string phone;
             string licensePlate;
@@ -49,6 +62,9 @@ namespace AutoWash.Application.Services
 
                 if (customer == null)
                     throw new Exception("CUSTOMER_NOT_FOUND: Không tìm thấy khách hàng.");
+
+                if (customer.IsLocked)
+                    throw new Exception("ACCOUNT_LOCKED: Tài khoản đang bị khóa.");
 
                 if (customer.SuspendedUntil.HasValue &&
                     customer.SuspendedUntil.Value > DateTime.UtcNow)
@@ -88,6 +104,51 @@ namespace AutoWash.Application.Services
 
                 phone = request.Phone.Trim();
                 licensePlate = request.LicensePlate.Trim();
+
+                customer = await _context.Customers
+                    .FirstOrDefaultAsync(c => c.Phone == "GUEST" && c.FullName == "Khách vãng lai");
+
+                if (customer == null)
+                {
+                    customer = new Customer
+                    {
+                        FullName = "Khách vãng lai",
+                        Phone = "GUEST",
+                        Password = "GUEST",
+                        Role = "MEMBER",
+                        TierID = 1,
+                        IsLocked = false,
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    _context.Customers.Add(customer);
+                    await _context.SaveChangesAsync();
+                }
+
+                effectiveCustomerId = customer.CustomerID;
+
+                tier = await _context.Tiers.FirstOrDefaultAsync(t => t.TierID == customer.TierID);
+                if (tier == null)
+                {
+                    if (customer.Phone == "GUEST" && customer.FullName == "Khách vãng lai")
+                    {
+                        tier = new Tier
+                        {
+                            TierID = 1,
+                            TierName = "Member",
+                            MinSpending = 0,
+                            BookingWindowDays = 7,
+                            DiscountRate = 0,
+                            PriorityScore = 1
+                        };
+                    }
+                    else
+                    {
+                        throw new Exception("TIER_NOT_FOUND: Không tìm thấy tier của khách vãng lai.");
+                    }
+                }
+
+                loyalty = await _context.LoyaltyAccounts.FirstOrDefaultAsync(l => l.CustomerID == customer.CustomerID);
             }
 
             var pendingCount = await _context.Bookings.CountAsync(b =>
@@ -196,7 +257,7 @@ namespace AutoWash.Application.Services
 
             var booking = new Booking
             {
-                CustomerID = customerId ?? 0,
+                CustomerID = effectiveCustomerId ?? 0,
                 Phone = phone,
                 LicensePlate = licensePlate,
                 ServiceID = request.ServiceId,
@@ -429,6 +490,11 @@ namespace AutoWash.Application.Services
 
                     await _tierService.EvaluateUpgradeAsync(customer.CustomerID);
 
+                    if (_pointService != null)
+                    {
+                        await _pointService.EarnPointsAsync(booking.BookingID);
+                    }
+
                     _logger.LogInformation(
                         "[CompleteBooking] BookingID={Id} completed, CustomerID={Cid}, Amount={Amt}",
                         bookingId,
@@ -448,6 +514,116 @@ namespace AutoWash.Application.Services
                 FinalAmount = booking.FinalAmount,
                 PointsEarned = booking.PointsEarned
             };
+        }
+
+        public async Task<IEnumerable<AvailableSlotResponse>> GetAvailableSlotsAsync(int? customerId, string? dateStr, string? licensePlate)
+        {
+            var windowDays = 7;
+            if (customerId.HasValue && customerId.Value > 0)
+            {
+                var customer = await _context.Customers
+                    .FirstOrDefaultAsync(c => c.CustomerID == customerId.Value);
+                if (customer != null)
+                {
+                    var tier = await _context.Tiers.FirstOrDefaultAsync(t => t.TierID == customer.TierID);
+                    if (tier != null)
+                    {
+                        windowDays = tier.BookingWindowDays;
+                    }
+                }
+            }
+
+            var currentUtc = DateTime.UtcNow;
+            var todayLocal = currentUtc.AddHours(7).Date;
+
+            var datesToGenerate = new List<DateTime>();
+            for (int i = 0; i < windowDays; i++)
+            {
+                datesToGenerate.Add(todayLocal.AddDays(i));
+            }
+
+            if (!string.IsNullOrEmpty(dateStr))
+            {
+                if (DateTime.TryParse(dateStr, out var requestedDate))
+                {
+                    datesToGenerate = datesToGenerate.Where(d => d.Date == requestedDate.Date).ToList();
+                }
+            }
+
+            var minDateUtc = todayLocal.AddHours(-7);
+            var maxDateUtc = todayLocal.AddDays(windowDays).AddHours(24 - 7);
+
+            var activeBookings = await _context.Bookings
+                .Where(b => (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Completed)
+                         && b.ScheduledTime >= minDateUtc
+                         && b.ScheduledTime <= maxDateUtc)
+                .Select(b => new
+                {
+                    b.ScheduledTime,
+                    Duration = _context.Services.Where(s => s.ServiceID == b.ServiceID).Select(s => s.Duration).FirstOrDefault(),
+                    b.LicensePlate
+                })
+                .ToListAsync();
+
+            var result = new List<AvailableSlotResponse>();
+
+            foreach (var date in datesToGenerate)
+            {
+                var response = new AvailableSlotResponse { Date = date.ToString("yyyy-MM-dd"), Slots = new List<TimeSlotDto>() };
+                var startTime = date.AddHours(7).AddMinutes(30); // 07:30 local
+                var endTime = date.AddHours(17); // 17:00 local
+
+                for (var slotLocal = startTime; slotLocal <= endTime; slotLocal = slotLocal.AddMinutes(30))
+                {
+                    var slotUtc = slotLocal.AddHours(-7);
+
+                    bool isAvailable = true;
+
+                    // BR-29: Advance Notice 60 mins
+                    if (slotUtc < currentUtc.AddMinutes(60))
+                    {
+                        isAvailable = false;
+                    }
+                    else
+                    {
+                        foreach (var b in activeBookings)
+                        {
+                            var bStartUtc = b.ScheduledTime;
+                            var bEndUtc = bStartUtc.AddMinutes(b.Duration + 5);
+
+                            // Overlap
+                            if (slotUtc >= bStartUtc && slotUtc < bEndUtc)
+                            {
+                                isAvailable = false;
+                                break;
+                            }
+
+                            // BR-28: Same license plate < 120 mins
+                            if (!string.IsNullOrEmpty(licensePlate) && !string.IsNullOrEmpty(b.LicensePlate))
+                            {
+                                if (b.LicensePlate.Equals(licensePlate, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    if (Math.Abs((slotUtc - bStartUtc).TotalMinutes) < 120)
+                                    {
+                                        isAvailable = false;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    response.Slots.Add(new TimeSlotDto
+                    {
+                        Time = slotLocal.ToString("HH:mm"),
+                        IsAvailable = isAvailable
+                    });
+                }
+
+                result.Add(response);
+            }
+
+            return result;
         }
     }
 }

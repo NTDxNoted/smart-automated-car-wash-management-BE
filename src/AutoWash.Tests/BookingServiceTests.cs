@@ -96,6 +96,45 @@ namespace AutoWash.Tests.Application.Services
     }
 
     [Fact]
+    public async Task CreateBookingAsync_WithGuestBooking_ShouldMapToDedicatedGuestCustomer()
+    {
+      using var dbContext = CreateDbContext();
+
+      dbContext.Services.Add(new Service
+      {
+        ServiceID = 1,
+        ServiceName = "Rửa xe cơ bản",
+        ServiceCategory = "Basic",
+        Price = 80000,
+        Duration = 20,
+        Status = "Active"
+      });
+
+      await dbContext.SaveChangesAsync();
+
+      var logger = Mock.Of<ILogger<BookingService>>();
+      var tierService = Mock.Of<ITierService>();
+      var service = new BookingService(dbContext, logger, tierService);
+
+      var request = new CreateBookingRequest
+      {
+        ServiceId = 1,
+        Phone = "0909999888",
+        LicensePlate = "51Z-999.88",
+        ScheduledTime = DateTime.UtcNow.AddHours(2),
+        PromoCode = null,
+        RewardId = null
+      };
+
+      var result = await service.CreateBookingAsync(request, null);
+
+      Assert.Equal("0909999888", result.Phone);
+      Assert.True(result.BookingId > 0);
+      Assert.True(await dbContext.Customers.AnyAsync(c => c.Phone == "GUEST" && c.FullName == "Khách vãng lai"));
+      Assert.True(await dbContext.Bookings.AnyAsync(b => b.BookingID == result.BookingId && b.CustomerID > 0));
+    }
+
+    [Fact]
     public async Task CreateBookingAsync_WithMemberTier_ShouldApplyTierDiscount()
     {
       using var dbContext = CreateDbContext();
