@@ -16,6 +16,18 @@ var builder = WebApplication.CreateBuilder(args);
 // 1. Thêm dịch vụ Controller
 builder.Services.AddControllers();
 
+// CORS — cho phép frontend dev server gọi API
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("FrontendDev", policy =>
+    {
+        policy.WithOrigins("http://localhost:5173", "http://localhost:3000")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
+
 // 2. Thêm dịch vụ Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -92,6 +104,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseCors("FrontendDev");
 
 // ISSUE-01: JWT Middleware
 app.UseMiddleware<JwtMiddleware>();

@@ -84,19 +84,45 @@ namespace AutoWash.Application.Services
 
             var now = DateTime.UtcNow;
 
-            var batches = await _context.PointTransactions
-                .Where(t => t.LoyaltyID == account.LoyaltyID
-                         && t.Type == PointTransactionType.Earn
-                         && t.ExpiredAt > now)
-                .OrderBy(t => t.ExpiredAt)
-                .Select(t => new PointBatchDto
-                {
-                    Points = t.Points,
-                    EarnedAt = t.CreatedAt,
-                    ExpiredAt = t.ExpiredAt!.Value,
-                    DaysUntilExpiry = (int)(t.ExpiredAt!.Value - now).TotalDays
-                })
+            // Tổng điểm đã tiêu (Redeem + Expire đều lưu âm)
+            var totalConsumed = Math.Abs(
+                await _context.PointTransactions
+                    .Where(t => t.LoyaltyID == account.LoyaltyID
+                             && (t.Type == PointTransactionType.Redeem || t.Type == PointTransactionType.Expire))
+                    .SumAsync(t => (int?)t.Points) ?? 0
+            );
+
+            // Tất cả Earn records theo thứ tự cũ → mới (FIFO)
+            var earnRecords = await _context.PointTransactions
+                .Where(t => t.LoyaltyID == account.LoyaltyID && t.Type == PointTransactionType.Earn)
+                .OrderBy(t => t.CreatedAt)
                 .ToListAsync();
+
+            // FIFO walk: trừ cuốn chiếu, chỉ giữ batch còn dương và chưa hết hạn
+            var batches = new List<PointBatchDto>();
+            var remaining = totalConsumed;
+            foreach (var earn in earnRecords)
+            {
+                if (remaining >= earn.Points)
+                {
+                    remaining -= earn.Points;
+                    continue;
+                }
+
+                var batchPoints = earn.Points - remaining;
+                remaining = 0;
+
+                if (earn.ExpiredAt.HasValue && earn.ExpiredAt.Value > now)
+                {
+                    batches.Add(new PointBatchDto
+                    {
+                        Points = batchPoints,
+                        EarnedAt = earn.CreatedAt,
+                        ExpiredAt = earn.ExpiredAt.Value,
+                        DaysUntilExpiry = (int)(earn.ExpiredAt.Value - now).TotalDays
+                    });
+                }
+            }
 
             return new LoyaltyWalletResponse
             {
@@ -143,6 +169,16 @@ namespace AutoWash.Application.Services
                 .FirstOrDefaultAsync(a => a.CustomerID == customerId);
 
             var totalPoints = account?.TotalPoints ?? 0;
+
+            // Anti double-spend (BR-59): trừ điểm đang bị lock bởi các Pending booking song song
+            var lockedPoints = await _context.Bookings
+                .Where(b => b.CustomerID == customerId
+                         && b.Status == BookingStatus.Pending
+                         && b.PointsRedeemed > 0)
+                .SumAsync(b => (int?)b.PointsRedeemed) ?? 0;
+
+            var availablePoints = totalPoints - lockedPoints;
+
             var maxAllowed = Math.Round(baseAmount * 0.5m, 2);
             var discountApplied = Math.Min(reward.DiscountAmount, maxAllowed);
 
@@ -155,7 +191,7 @@ namespace AutoWash.Application.Services
                 MaxAllowed = maxAllowed,
                 DiscountApplied = discountApplied,
                 FinalAmount = baseAmount - discountApplied,
-                IsValid = totalPoints >= reward.PointsRequired
+                IsValid = availablePoints >= reward.PointsRequired
             };
         }
 
