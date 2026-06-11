@@ -17,8 +17,8 @@ namespace AutoWash.Application.Interfaces
         DbSet<Customer> Customers { get; }
         DbSet<Vehicle> Vehicles { get; }
         DbSet<Transaction> Transactions { get; }
-        DbSet<Promotion> Promotions { get; }
-        DbSet<CustomerPromotion> CustomerPromotions { get; }
+        DbSet<Promotion> Promotions { get; set; }
+        DbSet<CustomerPromotion> CustomerPromotions { get; set; }
         Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     }
 }

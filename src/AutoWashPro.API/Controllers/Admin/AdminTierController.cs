@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
@@ -25,7 +25,7 @@ namespace AutoWashPro.API.Controllers.Admin
                 return Unauthorized(new { message = "UNAUTHORIZED: Cần đăng nhập." });
 
             var role = User.FindFirst(ClaimTypes.Role)?.Value;
-            if (role != "Admin")
+            if (!string.Equals(role,"Admin",System.StringComparison.OrdinalIgnoreCase))
                 return StatusCode(403, new { message = "FORBIDDEN: Chỉ Admin mới được thực hiện." });
 
             return null;
@@ -61,3 +61,4 @@ namespace AutoWashPro.API.Controllers.Admin
         }
     }
 }
+

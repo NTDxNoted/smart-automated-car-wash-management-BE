@@ -1,5 +1,3 @@
-using System;
-
 namespace AutoWash.Domain.Entities
 {
     public class Service
@@ -11,6 +9,5 @@ namespace AutoWash.Domain.Entities
         public decimal Price { get; set; }
         public int Duration { get; set; }
         public string Status { get; set; } = "Active";
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 }
