@@ -128,7 +128,7 @@ namespace AutoWash.Infrastructure.Data
 
                 entity.HasIndex(e => e.BookingID)
                     .HasDatabaseName("idx_txn_booking_paid")
-                    .HasFilter("status = 'Paid'")
+                    .HasFilter("\"status\" = 'Paid'")
                     .IsUnique();
             });
         }
