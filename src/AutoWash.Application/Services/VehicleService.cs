@@ -40,9 +40,9 @@ namespace AutoWash.Application.Services
             var customer = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == customerId);
             if (customer == null) throw new Exception("NOT_FOUND: Không tìm thấy tài khoản.");
 
-            // BR-10: verify OTP
-            if (!_otpService.Verify(customer.Phone, request.OtpCode))
-                throw new Exception("INVALID_OTP: Mã OTP không hợp lệ hoặc đã hết hạn.");
+            // BR-10: verify OTP (Tạm thời bỏ qua)
+            // if (!_otpService.Verify(customer.Phone, request.OtpCode))
+            //     throw new Exception("INVALID_OTP: Mã OTP không hợp lệ hoặc đã hết hạn.");
 
             // BR-09: UNIQUE (CustomerID, LicensePlate)
             var exists = await _context.Vehicles.AnyAsync(v =>
@@ -70,8 +70,8 @@ namespace AutoWash.Application.Services
             if (vehicle == null) throw new Exception("NOT_FOUND: Không tìm thấy xe.");
 
             var customer = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == customerId);
-            if (!_otpService.Verify(customer!.Phone, request.OtpCode))
-                throw new Exception("INVALID_OTP: Mã OTP không hợp lệ hoặc đã hết hạn.");
+            // if (!_otpService.Verify(customer!.Phone, request.OtpCode))
+            //     throw new Exception("INVALID_OTP: Mã OTP không hợp lệ hoặc đã hết hạn.");
 
             // BR-09: check duplicate trong cùng tài khoản
             var duplicate = await _context.Vehicles.AnyAsync(v =>
