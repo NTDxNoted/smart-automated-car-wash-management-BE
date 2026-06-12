@@ -115,6 +115,7 @@ namespace AutoWash.Infrastructure.Data
                 entity.Property(e => e.BookingID).HasColumnName("bookingid");
                 entity.Property(e => e.CustomerID).HasColumnName("customerid");
                 entity.Property(e => e.Phone).HasColumnName("phone");
+                entity.Property(e => e.VehicleID).HasColumnName("vehicleid");
                 entity.Property(e => e.LicensePlate).HasColumnName("licenseplate");
                 entity.Property(e => e.ServiceID).HasColumnName("serviceid");
                 entity.Property(e => e.RewardID).HasColumnName("rewardid");
