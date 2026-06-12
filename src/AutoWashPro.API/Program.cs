@@ -90,6 +90,9 @@ builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IPointService, PointService>();
 builder.Services.AddScoped<TransactionRepository>();
 
+// ISSUE-12: Admin Reports & RFM Dashboard
+builder.Services.AddScoped<IReportService, ReportService>();
+
 // ISSUE-10: Loyalty Points & Redemption (PointExpiryJob + repository)
 builder.Services.AddScoped<PointTransactionRepository>();
 builder.Services.AddHostedService<PointExpiryJob>();

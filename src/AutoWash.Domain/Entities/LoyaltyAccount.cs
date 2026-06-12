@@ -10,5 +10,6 @@ namespace AutoWash.Domain.Entities
         public int TotalPoints { get; set; }
         public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
 
+        public ICollection<PointTransaction> PointTransactions { get; set; } = new List<PointTransaction>();
     }
 }
