@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -382,25 +382,37 @@ namespace AutoWash.Application.Services
 
             var total = await query.CountAsync();
 
-            var bookings = await query
-                .OrderByDescending(b => b.ScheduledTime)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .Select(b => new BookingResponseDto
+            var bookings = await (from b in query
+                join s in _context.Services on b.ServiceID equals s.ServiceID into sj
+                from svc in sj.DefaultIfEmpty()
+                orderby b.ScheduledTime descending
+                select new BookingResponseDto
                 {
                     BookingId = b.BookingID,
                     LicensePlate = b.LicensePlate,
                     ScheduledTime = b.ScheduledTime,
                     Status = b.Status.ToString(),
                     FinalAmount = b.FinalAmount,
-                    PointsEarned = b.PointsEarned
+                    PointsEarned = b.PointsEarned,
+                    Service = svc == null ? new ServiceResponse() : new ServiceResponse
+                    {
+                        ServiceId = svc.ServiceID,
+                        ServiceName = svc.ServiceName,
+                        Price = svc.Price,
+                        Duration = svc.Duration,
+                        Description = svc.Description,
+                        Status = svc.Status,
+                    },
                 })
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
             return new PagedResponse<BookingResponseDto>
             {
                 Page = page,
                 Total = total,
+                PageSize = pageSize,
                 Data = bookings
             };
         }
