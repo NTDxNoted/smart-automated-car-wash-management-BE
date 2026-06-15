@@ -11,6 +11,8 @@ using AutoWash.Infrastructure.Jobs;
 using AutoWashPro.API.Middleware;
 
 
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
 // 1. Thêm dịch vụ Controller
