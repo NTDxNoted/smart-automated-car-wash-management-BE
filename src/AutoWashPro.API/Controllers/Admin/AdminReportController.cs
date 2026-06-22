@@ -71,5 +71,22 @@ namespace AutoWashPro.API.Controllers.Admin
         return BadRequest(new { error = "GET_LOYALTY_STATS_FAILED", message = ex.Message });
       }
     }
+
+    [HttpGet("peak-occupancy")]
+    public async Task<IActionResult> GetPeakOccupancy([FromQuery] DateTime startDate, [FromQuery] DateTime endDate)
+    {
+      try
+      {
+        if (startDate > endDate)
+          return BadRequest(new { error = "INVALID_DATE_RANGE", message = "startDate must be before or equal to endDate." });
+
+        var result = await _reportService.GetPeakOccupancyReportAsync(startDate, endDate);
+        return Ok(result);
+      }
+      catch (Exception ex)
+      {
+        return BadRequest(new { error = "GET_PEAK_OCCUPANCY_FAILED", message = ex.Message });
+      }
+    }
   }
 }

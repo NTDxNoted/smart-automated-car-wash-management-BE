@@ -111,6 +111,74 @@ namespace AutoWash.Application.Services
       };
     }
 
+    public async Task<PeakOccupancyResponse> GetPeakOccupancyReportAsync(DateTime startDate, DateTime endDate)
+    {
+      const int maxParallelSlots = 1;
+      var eligibleStatuses = new[] { BookingStatus.Completed, BookingStatus.Pending };
+
+      var rangeStart = startDate.Date;
+      var rangeEnd = endDate.Date.AddDays(1);
+      var totalDays = (endDate.Date - startDate.Date).Days + 1;
+
+      var bookings = await _context.Bookings
+          .Where(b => b.ScheduledTime >= rangeStart
+                   && b.ScheduledTime < rangeEnd
+                   && eligibleStatuses.Contains(b.Status))
+          .ToListAsync();
+
+      var dayOrder = new[]
+      {
+        DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday,
+        DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday
+      };
+
+      var dayStats = dayOrder
+          .Select(day => new DayOfWeekStatDto
+          {
+            DayOfWeek = day.ToString(),
+            BookingCount = bookings.Count(b => b.ScheduledTime.DayOfWeek == day)
+          })
+          .ToList();
+
+      var hourStats = new List<HourStatDto>();
+      var slotStart = new TimeSpan(7, 30, 0);
+      var slotEnd = new TimeSpan(17, 30, 0);
+      var current = slotStart;
+
+      while (current <= slotEnd)
+      {
+        var next = current.Add(TimeSpan.FromMinutes(30));
+        var count = bookings.Count(b =>
+        {
+          var t = b.ScheduledTime.TimeOfDay;
+          return t >= current && t < next;
+        });
+
+        var denominator = totalDays * maxParallelSlots;
+        var occupancy = denominator == 0 ? 0m
+            : Math.Round((decimal)count / denominator * 100, 2);
+
+        hourStats.Add(new HourStatDto
+        {
+          TimeSlot = $"{(int)current.TotalHours:D2}:{current.Minutes:D2}",
+          BookingCount = count,
+          OccupancyPercentage = occupancy
+        });
+
+        current = next;
+      }
+
+      return new PeakOccupancyResponse
+      {
+        StartDate = startDate.ToString("yyyy-MM-dd"),
+        EndDate = endDate.ToString("yyyy-MM-dd"),
+        TotalDays = totalDays,
+        MaxParallelSlots = maxParallelSlots,
+        DayOfWeekStats = dayStats,
+        HourStats = hourStats
+      };
+    }
+
     private static string DetermineTier(int totalPoints)
     {
       if (totalPoints >= 5000) return "Platinum";
