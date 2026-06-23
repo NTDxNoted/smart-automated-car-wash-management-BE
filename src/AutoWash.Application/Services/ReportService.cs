@@ -111,6 +111,9 @@ namespace AutoWash.Application.Services
       };
     }
 
+    // Vietnam is UTC+7 with no DST — fixed offset is safe.
+    private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
+
     public async Task<PeakOccupancyResponse> GetPeakOccupancyReportAsync(DateTime startDate, DateTime endDate)
     {
       const int maxParallelSlots = 1;
@@ -136,7 +139,7 @@ namespace AutoWash.Application.Services
           .Select(day => new DayOfWeekStatDto
           {
             DayOfWeek = day.ToString(),
-            BookingCount = bookings.Count(b => b.ScheduledTime.DayOfWeek == day)
+            BookingCount = bookings.Count(b => b.ScheduledTime.Add(VietnamOffset).DayOfWeek == day)
           })
           .ToList();
 
@@ -150,7 +153,7 @@ namespace AutoWash.Application.Services
         var next = current.Add(TimeSpan.FromMinutes(30));
         var count = bookings.Count(b =>
         {
-          var t = b.ScheduledTime.TimeOfDay;
+          var t = b.ScheduledTime.Add(VietnamOffset).TimeOfDay;
           return t >= current && t < next;
         });
 
