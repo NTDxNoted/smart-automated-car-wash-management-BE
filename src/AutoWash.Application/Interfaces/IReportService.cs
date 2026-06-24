@@ -8,5 +8,6 @@ namespace AutoWash.Application.Interfaces
     Task<IReadOnlyList<RfmReportResponse>> GetRfmReportAsync();
     Task<IReadOnlyList<TierDistributionResponse>> GetTierDistributionAsync();
     Task<LoyaltyStatsResponse> GetLoyaltyStatsAsync();
+    Task<PeakOccupancyResponse> GetPeakOccupancyReportAsync(DateTime startDate, DateTime endDate);
   }
 }
