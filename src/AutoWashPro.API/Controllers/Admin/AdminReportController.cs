@@ -91,5 +91,25 @@ namespace AutoWashPro.API.Controllers.Admin
         return BadRequest(new { error = "GET_PEAK_OCCUPANCY_FAILED", message = ex.Message });
       }
     }
+
+    [HttpGet("promotions-roi")]
+    public async Task<IActionResult> GetPromotionsRoi([FromQuery] DateTime startDate, [FromQuery] DateTime endDate)
+    {
+      try
+      {
+        if (startDate > endDate)
+          return BadRequest(new { error = "INVALID_DATE_RANGE", message = "startDate must be before or equal to endDate." });
+
+        if ((endDate.Date - startDate.Date).Days > 365)
+          return BadRequest(new { error = "DATE_RANGE_TOO_WIDE", message = "Date range cannot exceed 366 days." });
+
+        var result = await _reportService.GetPromotionRoiReportAsync(startDate, endDate);
+        return Ok(result);
+      }
+      catch (Exception ex)
+      {
+        return BadRequest(new { error = "GET_PROMOTIONS_ROI_FAILED", message = ex.Message });
+      }
+    }
   }
 }
