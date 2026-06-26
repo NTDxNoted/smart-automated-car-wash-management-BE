@@ -184,8 +184,9 @@ namespace AutoWash.Application.Services
 
     public async Task<PromotionRoiResponse> GetPromotionRoiReportAsync(DateTime startDate, DateTime endDate)
     {
-      var rangeStart = startDate.Date;
-      var rangeEnd = endDate.Date.AddDays(1);
+      // CompletedAt is stored as UTC; shift VN date boundaries to UTC before comparing
+      var rangeStart = startDate.Date.AddHours(-7);
+      var rangeEnd = endDate.Date.AddDays(1).AddHours(-7);
 
       var rawItems = await (
           from cp in _context.CustomerPromotions
