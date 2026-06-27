@@ -226,6 +226,9 @@ namespace AutoWash.Infrastructure.Data
                 entity.Property(e => e.BookingID).HasColumnName("bookingid");
                 entity.Property(e => e.UsedAt).HasColumnName("usedat");
                 entity.Property(e => e.DiscountAmountActual).HasColumnName("discountamountactual");
+
+                entity.HasIndex(e => e.PromotionID);
+                entity.HasIndex(e => e.BookingID);
             });
         }
     }

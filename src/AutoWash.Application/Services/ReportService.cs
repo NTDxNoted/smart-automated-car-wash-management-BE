@@ -182,6 +182,58 @@ namespace AutoWash.Application.Services
       };
     }
 
+    public async Task<PromotionRoiResponse> GetPromotionRoiReportAsync(DateTime startDate, DateTime endDate)
+    {
+      // CompletedAt is stored as UTC; shift VN date boundaries to UTC before comparing
+      var rangeStart = startDate.Date.AddHours(-7);
+      var rangeEnd = endDate.Date.AddDays(1).AddHours(-7);
+
+      var rawItems = await (
+          from cp in _context.CustomerPromotions
+          join p in _context.Promotions on cp.PromotionID equals p.PromotionID
+          join b in _context.Bookings on cp.BookingID equals b.BookingID
+          join t in _context.Transactions on b.BookingID equals t.BookingID
+          where b.Status == BookingStatus.Completed
+             && t.Status == TransactionStatus.Paid
+             && b.CompletedAt >= rangeStart
+             && b.CompletedAt < rangeEnd
+          group new { cp.DiscountAmountActual, b.FinalAmount }
+            by new { p.PromotionID, p.Title, p.PromoCode } into g
+          select new
+          {
+            g.Key.PromotionID,
+            g.Key.Title,
+            g.Key.PromoCode,
+            UsageCount = g.Count(),
+            TotalDiscountGiven = g.Sum(x => x.DiscountAmountActual),
+            RevenueGenerated = g.Sum(x => x.FinalAmount)
+          }
+      ).ToListAsync();
+
+      var items = rawItems
+          .OrderByDescending(x => x.RevenueGenerated)
+          .Select(x => new PromotionRoiItemDto
+          {
+            PromotionId = x.PromotionID,
+            Title = x.Title,
+            PromoCode = x.PromoCode,
+            UsageCount = x.UsageCount,
+            TotalDiscountGiven = x.TotalDiscountGiven,
+            RevenueGenerated = x.RevenueGenerated,
+            RoiPercentage = x.TotalDiscountGiven == 0 ? 0m
+                : Math.Round((x.RevenueGenerated - x.TotalDiscountGiven) / x.TotalDiscountGiven * 100, 2)
+          })
+          .ToList();
+
+      return new PromotionRoiResponse
+      {
+        StartDate = startDate.ToString("yyyy-MM-dd"),
+        EndDate = endDate.ToString("yyyy-MM-dd"),
+        TotalPromotions = items.Count,
+        Items = items
+      };
+    }
+
     private static string DetermineTier(int totalPoints)
     {
       if (totalPoints >= 5000) return "Platinum";
