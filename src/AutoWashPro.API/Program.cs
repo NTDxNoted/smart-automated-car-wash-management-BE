@@ -17,6 +17,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // 1. Thêm dịch vụ Controller
 builder.Services.AddControllers();
+builder.Services.Configure<AutoWash.Application.DTOs.BookingSettings>(builder.Configuration.GetSection("BookingSettings"));
 
 // CORS — cho phép frontend dev server gọi API
 builder.Services.AddCors(options =>
@@ -111,7 +112,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection();
 app.UseCors("FrontendDev");
 
 // ISSUE-01: JWT Middleware
