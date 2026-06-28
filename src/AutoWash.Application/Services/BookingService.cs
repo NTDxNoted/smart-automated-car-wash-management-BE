@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using AutoWash.Application.DTOs;
 using AutoWash.Application.Interfaces;
 using AutoWash.Domain.Enums;
@@ -17,12 +18,13 @@ namespace AutoWash.Application.Services
         private readonly ILogger<BookingService> _logger;
         private readonly ITierService _tierService;
         private readonly IPointService? _pointService;
+        private readonly BookingSettings _bookingSettings;
 
         public BookingService(
             IApplicationDbContext context,
             ILogger<BookingService> logger,
             ITierService tierService)
-            : this(context, logger, tierService, null)
+            : this(context, logger, tierService, null, Microsoft.Extensions.Options.Options.Create(new BookingSettings()))
         {
         }
 
@@ -31,11 +33,31 @@ namespace AutoWash.Application.Services
             ILogger<BookingService> logger,
             ITierService tierService,
             IPointService? pointService)
+            : this(context, logger, tierService, pointService, Microsoft.Extensions.Options.Options.Create(new BookingSettings()))
+        {
+        }
+
+        public BookingService(
+            IApplicationDbContext context,
+            ILogger<BookingService> logger,
+            ITierService tierService,
+            IOptions<BookingSettings> bookingSettings)
+            : this(context, logger, tierService, null, bookingSettings)
+        {
+        }
+
+        public BookingService(
+            IApplicationDbContext context,
+            ILogger<BookingService> logger,
+            ITierService tierService,
+            IPointService? pointService,
+            IOptions<BookingSettings> bookingSettings)
         {
             _context = context;
             _logger = logger;
             _tierService = tierService;
             _pointService = pointService;
+            _bookingSettings = bookingSettings.Value;
         }
 
         // POST /api/Bookings
@@ -199,25 +221,47 @@ namespace AutoWash.Application.Services
             bool vehicleBufferViolated = await _context.Bookings.AnyAsync(b =>
                 b.LicensePlate == licensePlate &&
                 b.Status != BookingStatus.Cancelled &&
+                b.Status != BookingStatus.Failed &&
                 b.ScheduledTime >= bufferStart &&
                 b.ScheduledTime <= bufferEnd);
 
             if (vehicleBufferViolated)
                 throw new Exception("VEHICLE_BUFFER_VIOLATION: Biển số này đã có lịch hẹn trong vòng 120 phút.");
 
-            bool slotTaken = await _context.Bookings.AnyAsync(b =>
-                b.Status != BookingStatus.Cancelled &&
-                b.ScheduledTime >= request.ScheduledTime.AddMinutes(-5) &&
-                b.ScheduledTime <= request.ScheduledTime.AddMinutes(5));
-
-            if (slotTaken)
-                throw new Exception("SLOT_NOT_AVAILABLE: Khung giờ này đã có người đặt.");
-
             var service = await _context.Services
                 .FirstOrDefaultAsync(s => s.ServiceID == request.ServiceId);
 
             if (service == null)
                 throw new Exception("SERVICE_NOT_FOUND: Không tìm thấy dịch vụ.");
+
+            var newStart = request.ScheduledTime;
+            var newEnd = newStart.AddMinutes(service.Duration + 5);
+
+            var activeBookings = await _context.Bookings
+                .Where(b => b.Status != BookingStatus.Cancelled && b.Status != BookingStatus.Failed)
+                .Where(b => b.ScheduledTime.Date == newStart.Date)
+                .Select(b => new
+                {
+                    b.ScheduledTime,
+                    Duration = _context.Services.Where(s => s.ServiceID == b.ServiceID).Select(s => s.Duration).FirstOrDefault()
+                })
+                .ToListAsync();
+
+            int overlapCount = 0;
+            foreach (var b in activeBookings)
+            {
+                var bStart = b.ScheduledTime;
+                var bEnd = bStart.AddMinutes(b.Duration + 5);
+
+                if (bStart < newEnd && newStart < bEnd)
+                {
+                    overlapCount++;
+                }
+            }
+
+            int maxParallelSlots = _bookingSettings.MaxParallelSlots > 0 ? _bookingSettings.MaxParallelSlots : 1;
+            if (overlapCount >= maxParallelSlots)
+                throw new Exception("SLOT_NOT_AVAILABLE: Khung giờ này đã đầy (đạt giới hạn số lượng xe rửa song song).");
 
             decimal baseAmount = service.Price;
             decimal tierDiscount = 0m;
@@ -481,12 +525,34 @@ namespace AutoWash.Application.Services
 
             booking.Status = BookingStatus.Cancelled;
 
+            int pointsRefunded = booking.PointsRedeemed;
+            if (pointsRefunded > 0 && booking.CustomerID > 0)
+            {
+                var loyalty = await _context.LoyaltyAccounts
+                    .FirstOrDefaultAsync(l => l.CustomerID == booking.CustomerID);
+                if (loyalty != null)
+                {
+                    loyalty.TotalPoints += pointsRefunded;
+                    loyalty.LastUpdated = DateTime.UtcNow;
+
+                    _context.PointTransactions.Add(new PointTransaction
+                    {
+                        LoyaltyID = loyalty.LoyaltyID,
+                        Points = pointsRefunded,
+                        Type = PointTransactionType.Earn, // Earn represents positive points change
+                        RefBookingID = booking.BookingID,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+
             await _context.SaveChangesAsync();
 
             return new CancelBookingResponseDto
             {
                 BookingId = booking.BookingID,
                 Status = "Cancelled",
+                PointsRefunded = pointsRefunded,
                 Message = "Hủy lịch thành công."
             };
         }
@@ -600,21 +666,27 @@ namespace AutoWash.Application.Services
             {
                 var response = new AvailableSlotResponse { Date = date.ToString("yyyy-MM-dd"), Slots = new List<TimeSlotDto>() };
                 var startTime = date.AddHours(7).AddMinutes(30); // 07:30 local
-                var endTime = date.AddHours(17); // 17:00 local
+                var endTime = date.AddHours(19).AddMinutes(30); // 19:30 local
 
-                for (var slotLocal = startTime; slotLocal <= endTime; slotLocal = slotLocal.AddMinutes(30))
+                for (var slotLocal = startTime; slotLocal <= endTime; slotLocal = slotLocal.AddMinutes(60))
                 {
                     var slotUtc = slotLocal.AddHours(-7);
 
                     bool isAvailable = true;
+                    int maxParallelSlots = _bookingSettings.MaxParallelSlots > 0 ? _bookingSettings.MaxParallelSlots : 1;
+                    int availableCount = maxParallelSlots;
 
                     // BR-29: Advance Notice 60 mins
                     if (slotUtc < currentUtc.AddMinutes(60))
                     {
                         isAvailable = false;
+                        availableCount = 0;
                     }
                     else
                     {
+                        int overlapCount = 0;
+                        bool isLicensePlateViolated = false;
+
                         foreach (var b in activeBookings)
                         {
                             var bStartUtc = b.ScheduledTime;
@@ -623,8 +695,7 @@ namespace AutoWash.Application.Services
                             // Overlap
                             if (slotUtc >= bStartUtc && slotUtc < bEndUtc)
                             {
-                                isAvailable = false;
-                                break;
+                                overlapCount++;
                             }
 
                             // BR-28: Same license plate < 120 mins
@@ -634,18 +705,25 @@ namespace AutoWash.Application.Services
                                 {
                                     if (Math.Abs((slotUtc - bStartUtc).TotalMinutes) < 120)
                                     {
-                                        isAvailable = false;
-                                        break;
+                                        isLicensePlateViolated = true;
                                     }
                                 }
                             }
+                        }
+
+                        availableCount = Math.Max(0, maxParallelSlots - overlapCount);
+                        if (overlapCount >= maxParallelSlots || isLicensePlateViolated)
+                        {
+                            isAvailable = false;
+                            availableCount = 0;
                         }
                     }
 
                     response.Slots.Add(new TimeSlotDto
                     {
                         Time = slotLocal.ToString("HH:mm"),
-                        IsAvailable = isAvailable
+                        IsAvailable = isAvailable,
+                        AvailableCount = availableCount
                     });
                 }
 
