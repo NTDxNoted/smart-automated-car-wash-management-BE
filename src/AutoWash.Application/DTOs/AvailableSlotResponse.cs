@@ -13,5 +13,6 @@ namespace AutoWash.Application.DTOs
     {
         public string Time { get; set; } = string.Empty;
         public bool IsAvailable { get; set; }
+        public int AvailableCount { get; set; }
     }
 }
