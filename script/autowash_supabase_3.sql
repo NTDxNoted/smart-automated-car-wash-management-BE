@@ -96,6 +96,8 @@ CREATE TABLE Promotion (
     StartDate     DATE           NOT NULL,
     EndDate       DATE           NOT NULL,
     IsActive      BOOLEAN        NOT NULL DEFAULT TRUE,
+    MinOrderValue DECIMAL(15,2)  NOT NULL DEFAULT 0.00,
+    MaxDiscountAmount DECIMAL(15,2) NULL DEFAULT NULL,
     CONSTRAINT fk_promo_tier FOREIGN KEY (MinTierID) REFERENCES Tier(TierID)
         ON UPDATE CASCADE ON DELETE SET NULL
 );
@@ -143,6 +145,8 @@ CREATE TABLE Transaction (
     CONSTRAINT fk_txn_booking FOREIGN KEY (BookingID) REFERENCES Booking(BookingID)
         ON UPDATE CASCADE ON DELETE RESTRICT
 );
+CREATE UNIQUE INDEX idx_txn_booking_paid ON Transaction(BookingID) WHERE Status = 'Paid';
+
 
 -- ── 9. LoyaltyAccount ───────────────────────────────────
 CREATE TABLE LoyaltyAccount (

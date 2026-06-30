@@ -1,8 +1,10 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using AutoWash.Application.DTOs;
 using AutoWash.Application.Interfaces;
 using AutoWash.Domain.Enums;
@@ -15,127 +17,395 @@ namespace AutoWash.Application.Services
         private readonly IApplicationDbContext _context;
         private readonly ILogger<BookingService> _logger;
         private readonly ITierService _tierService;
+        private readonly IPointService? _pointService;
+        private readonly BookingSettings _bookingSettings;
 
-        public BookingService(IApplicationDbContext context, ILogger<BookingService> logger, ITierService tierService)
+        public BookingService(
+            IApplicationDbContext context,
+            ILogger<BookingService> logger,
+            ITierService tierService)
+            : this(context, logger, tierService, null, Microsoft.Extensions.Options.Options.Create(new BookingSettings()))
+        {
+        }
+
+        public BookingService(
+            IApplicationDbContext context,
+            ILogger<BookingService> logger,
+            ITierService tierService,
+            IPointService? pointService)
+            : this(context, logger, tierService, pointService, Microsoft.Extensions.Options.Options.Create(new BookingSettings()))
+        {
+        }
+
+        public BookingService(
+            IApplicationDbContext context,
+            ILogger<BookingService> logger,
+            ITierService tierService,
+            IOptions<BookingSettings> bookingSettings)
+            : this(context, logger, tierService, null, bookingSettings)
+        {
+        }
+
+        public BookingService(
+            IApplicationDbContext context,
+            ILogger<BookingService> logger,
+            ITierService tierService,
+            IPointService? pointService,
+            IOptions<BookingSettings> bookingSettings)
         {
             _context = context;
             _logger = logger;
             _tierService = tierService;
+            _pointService = pointService;
+            _bookingSettings = bookingSettings.Value;
         }
 
-        public async Task<BookingResponse> CreateBookingAsync(CreateBookingRequest request, int? customerId = null)
+        public async Task<BookingResponseDto> CreateBookingAsync(CreateBookingRequest request, int? customerId)
         {
-            if (request == null) throw new Exception("INVALID_REQUEST: Thiếu dữ liệu đặt lịch.");
-            if (request.ServiceId <= 0) throw new Exception("INVALID_REQUEST: Thiếu dịch vụ.");
+            if (request.ServiceId <= 0)
+                throw new Exception("SERVICE_REQUIRED: Vui lòng chọn dịch vụ.");
 
-            var service = await _context.Services.FirstOrDefaultAsync(s => s.ServiceID == request.ServiceId && s.Status == "Active");
-            if (service == null) throw new Exception("NOT_FOUND: Không tìm thấy dịch vụ.");
-
-            if (request.ScheduledTime < DateTime.UtcNow.AddHours(1))
-                throw new Exception("ADVANCE_NOTICE_TOO_SHORT: Booking phải cách giờ hẹn tối thiểu 60 phút.");
+            if (request.ScheduledTime <= DateTime.UtcNow.AddMinutes(60))
+                throw new Exception("ADVANCE_NOTICE_VIOLATION: Phải đặt lịch trước ít nhất 60 phút.");
 
             Customer? customer = null;
-            Vehicle? vehicle = null;
+            Tier? tier = null;
+            LoyaltyAccount? loyalty = null;
+            Vehicle? selectedVehicle = null;
+            int? effectiveCustomerId = customerId;
+
+            string phone;
+            string licensePlate;
 
             if (customerId.HasValue)
             {
-                customer = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == customerId.Value);
-                if (customer == null) throw new Exception("NOT_FOUND: Không tìm thấy khách hàng.");
-                if (customer.SuspendedUntil.HasValue && customer.SuspendedUntil.Value > DateTime.UtcNow)
-                    throw new Exception("ACCOUNT_SUSPENDED: Tài khoản đang bị khóa.");
+                customer = await _context.Customers
+                    .FirstOrDefaultAsync(c => c.CustomerID == customerId.Value);
 
-                if (request.VehicleId.HasValue)
-                {
-                    vehicle = await _context.Vehicles.FirstOrDefaultAsync(v => v.VehicleID == request.VehicleId.Value && v.CustomerID == customerId.Value && v.IsActive);
-                }
+                if (customer == null)
+                    throw new Exception("CUSTOMER_NOT_FOUND: Không tìm thấy khách hàng.");
 
-                if (vehicle == null) throw new Exception("NOT_FOUND: Không tìm thấy xe của khách hàng.");
+                if (customer.IsLocked)
+                    throw new Exception("ACCOUNT_LOCKED: Tài khoản đang bị khóa.");
 
-                var pendingCount = await _context.Bookings.CountAsync(b => b.CustomerID == customerId.Value && b.Status == BookingStatus.Pending);
-                if (pendingCount >= 3) throw new Exception("PENDING_QUOTA_EXCEEDED: Bạn đã có 3 lịch hẹn đang chờ xác nhận.");
+                if (customer.SuspendedUntil.HasValue &&
+                    customer.SuspendedUntil.Value > DateTime.UtcNow)
+                    throw new Exception("SUSPENDED_ACCOUNT: Tài khoản đang bị tạm khóa.");
+
+                tier = await _context.Tiers.FirstOrDefaultAsync(t => t.TierID == customer.TierID);
+                if (tier == null)
+                    throw new Exception("TIER_NOT_FOUND: Không tìm thấy tier của khách hàng.");
+
+                loyalty = await _context.LoyaltyAccounts.FirstOrDefaultAsync(l => l.CustomerID == customer.CustomerID);
+
+                phone = customer.Phone;
+
+                if (!request.VehicleId.HasValue || request.VehicleId.Value <= 0)
+                    throw new Exception("VEHICLE_REQUIRED: Member phải truyền vehicleId.");
+
+                selectedVehicle = await _context.Vehicles
+                    .FirstOrDefaultAsync(v =>
+                        v.VehicleID == request.VehicleId.Value &&
+                        v.CustomerID == customerId.Value);
+
+                if (selectedVehicle == null)
+                    throw new Exception("VEHICLE_NOT_FOUND: Không tìm thấy xe của khách hàng.");
+
+                licensePlate = selectedVehicle.LicensePlate;
+                if (request.ScheduledTime > DateTime.UtcNow.AddDays(tier.BookingWindowDays))
+                    throw new Exception("BOOKING_WINDOW_VIOLATION: Lịch đặt vượt quá khung thời gian theo tier.");
             }
             else
             {
-                if (string.IsNullOrWhiteSpace(request.Phone) || string.IsNullOrWhiteSpace(request.LicensePlate))
-                    throw new Exception("INVALID_REQUEST: Cần số điện thoại và biển số xe.");
+                if (string.IsNullOrWhiteSpace(request.Phone))
+                    throw new Exception("PHONE_REQUIRED: Guest phải nhập số điện thoại.");
 
-                vehicle = await _context.Vehicles.FirstOrDefaultAsync(v => v.LicensePlate == request.LicensePlate.Trim() && v.IsActive);
-                if (vehicle == null) throw new Exception("NOT_FOUND: Không tìm thấy xe tương ứng với biển số.");
+                if (string.IsNullOrWhiteSpace(request.LicensePlate))
+                    throw new Exception("LICENSE_PLATE_REQUIRED: Guest phải nhập biển số xe.");
 
-                var pendingCount = await _context.Bookings.CountAsync(b => b.Phone == request.Phone.Trim() && b.Status == BookingStatus.Pending);
-                if (pendingCount >= 1) throw new Exception("PENDING_QUOTA_EXCEEDED: Bạn đã có 1 lịch hẹn đang chờ xác nhận.");
+                phone = request.Phone.Trim();
+                licensePlate = request.LicensePlate.Trim();
+
+                customer = await _context.Customers
+                    .FirstOrDefaultAsync(c => c.Phone == "GUEST" && c.FullName == "Khách vãng lai");
+
+                if (customer == null)
+                {
+                    customer = new Customer
+                    {
+                        FullName = "Khách vãng lai",
+                        Phone = "GUEST",
+                        Password = "GUEST",
+                        Role = "MEMBER",
+                        TierID = 1,
+                        IsLocked = false,
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    _context.Customers.Add(customer);
+                    await _context.SaveChangesAsync();
+                }
+
+                effectiveCustomerId = customer.CustomerID;
+                selectedVehicle = await _context.Vehicles
+                    .FirstOrDefaultAsync(v =>
+                        v.CustomerID == customer.CustomerID &&
+                        v.LicensePlate == licensePlate);
+
+                if (selectedVehicle == null)
+                {
+                    selectedVehicle = new Vehicle
+                    {
+                        CustomerID = customer.CustomerID,
+                        LicensePlate = licensePlate
+                    };
+
+                    _context.Vehicles.Add(selectedVehicle);
+                    await _context.SaveChangesAsync();
+                }
+
+                tier = await _context.Tiers.FirstOrDefaultAsync(t => t.TierID == customer.TierID);
+                if (tier == null)
+                {
+                    if (customer.Phone == "GUEST" && customer.FullName == "Khách vãng lai")
+                    {
+                        tier = new Tier
+                        {
+                            TierID = 1,
+                            TierName = "Member",
+                            MinSpending = 0,
+                            BookingWindowDays = 7,
+                            DiscountRate = 0,
+                            PriorityScore = 1
+                        };
+                    }
+                    else
+                    {
+                        throw new Exception("TIER_NOT_FOUND: Không tìm thấy tier của khách vãng lai.");
+                    }
+                }
+
+                loyalty = await _context.LoyaltyAccounts.FirstOrDefaultAsync(l => l.CustomerID == customer.CustomerID);
             }
 
-            var samePlateConflict = await _context.Bookings.AnyAsync(b =>
-                b.LicensePlate == vehicle.LicensePlate &&
-                b.Status != BookingStatus.Cancelled &&
-                b.Status != BookingStatus.Completed &&
-                b.Status != BookingStatus.Failed &&
-                b.ScheduledTime >= request.ScheduledTime.AddMinutes(-120) &&
-                b.ScheduledTime <= request.ScheduledTime.AddMinutes(120));
-            if (samePlateConflict) throw new Exception("VEHICLE_BUFFER_VIOLATION: Biển số này đã có lịch hẹn trong vòng 120 phút.");
+            var pendingCount = await _context.Bookings.CountAsync(b =>
+                b.Status == BookingStatus.Pending &&
+                (
+                    customerId.HasValue
+                        ? b.CustomerID == customerId.Value
+                        : b.Phone == phone
+                ));
 
-            var baseAmount = service.Price;
+            if (!customerId.HasValue && pendingCount >= 1)
+                throw new Exception("PENDING_QUOTA_EXCEEDED: Guest chỉ được có tối đa 1 lịch hẹn đang chờ.");
+
+            if (customerId.HasValue && pendingCount >= 3)
+                throw new Exception("PENDING_QUOTA_EXCEEDED: Bạn đã có 3 lịch hẹn đang chờ xác nhận.");
+
+            var sameDayCount = await _context.Bookings.CountAsync(b =>
+                b.ScheduledTime.Date == request.ScheduledTime.Date &&
+                b.Status != BookingStatus.Cancelled &&
+                (
+                    customerId.HasValue
+                        ? b.CustomerID == customerId.Value
+                        : b.Phone == phone
+                ));
+
+            if (sameDayCount >= 2)
+                throw new Exception("DAILY_BOOKING_LIMIT: Không được có quá 2 booking chưa hoàn thành trong ngày.");
+
+            var bufferStart = request.ScheduledTime.AddMinutes(-120);
+            var bufferEnd = request.ScheduledTime.AddMinutes(120);
+
+            bool vehicleBufferViolated = await _context.Bookings.AnyAsync(b =>
+                b.LicensePlate == licensePlate &&
+                b.Status != BookingStatus.Cancelled &&
+                b.Status != BookingStatus.Failed &&
+                b.ScheduledTime >= bufferStart &&
+                b.ScheduledTime <= bufferEnd);
+
+            if (vehicleBufferViolated)
+                throw new Exception("VEHICLE_BUFFER_VIOLATION: Biển số này đã có lịch hẹn trong vòng 120 phút.");
+
+            var service = await _context.Services
+                .FirstOrDefaultAsync(s => s.ServiceID == request.ServiceId);
+
+            if (service == null)
+                throw new Exception("SERVICE_NOT_FOUND: Không tìm thấy dịch vụ.");
+
+            var newStart = request.ScheduledTime;
+            var newEnd = newStart.AddMinutes(service.Duration + 5);
+
+            var activeBookings = await _context.Bookings
+                .Where(b => b.Status != BookingStatus.Cancelled && b.Status != BookingStatus.Failed)
+                .Where(b => b.ScheduledTime.Date == newStart.Date)
+                .Select(b => new
+                {
+                    b.ScheduledTime,
+                    Duration = _context.Services.Where(s => s.ServiceID == b.ServiceID).Select(s => s.Duration).FirstOrDefault()
+                })
+                .ToListAsync();
+
+            int overlapCount = 0;
+            foreach (var b in activeBookings)
+            {
+                var bStart = b.ScheduledTime;
+                var bEnd = bStart.AddMinutes(b.Duration + 5);
+
+                if (bStart < newEnd && newStart < bEnd)
+                {
+                    overlapCount++;
+                }
+            }
+
+            int maxParallelSlots = _bookingSettings.MaxParallelSlots > 0 ? _bookingSettings.MaxParallelSlots : 1;
+            if (overlapCount >= maxParallelSlots)
+                throw new Exception("SLOT_NOT_AVAILABLE: Khung giờ này đã đầy (đạt giới hạn số lượng xe rửa song song).");
+
+            decimal baseAmount = service.Price;
             decimal tierDiscount = 0m;
             decimal rewardDiscount = 0m;
             decimal promotionDiscount = 0m;
 
-            if (customer != null)
+            if (tier != null)
             {
-                var tier = await _context.Tiers.FirstOrDefaultAsync(t => t.TierID == customer.TierID);
-                tierDiscount = Math.Round(baseAmount * ((tier?.DiscountRate ?? 0m) / 100m), 0);
+                tierDiscount = Math.Round(baseAmount * (tier.DiscountRate / 100m), 0);
             }
 
-            var finalAmount = baseAmount - tierDiscount - rewardDiscount - promotionDiscount;
-            if (finalAmount < 0) finalAmount = 0;
+            RewardsCatalog? reward = null;
+            if (request.RewardId.HasValue)
+            {
+                reward = await _context.RewardsCatalog.FirstOrDefaultAsync(r => r.RewardID == request.RewardId.Value && r.IsActive);
+                if (reward == null)
+                    throw new Exception("REWARD_NOT_FOUND: Không tìm thấy ưu đãi điểm.");
+
+                if (loyalty == null || loyalty.TotalPoints < reward.PointsRequired)
+                    throw new Exception("INSUFFICIENT_POINTS: Điểm không đủ để dùng ưu đãi này.");
+
+                rewardDiscount = Math.Min(reward.DiscountAmount, baseAmount * 0.50m);
+
+                if (rewardDiscount < 0)
+                    rewardDiscount = 0;
+            }
+
+            Promotion? promotion = null;
+            if (!string.IsNullOrWhiteSpace(request.PromoCode))
+            {
+                promotion = await _context.Promotions.FirstOrDefaultAsync(p => p.PromoCode == request.PromoCode.Trim().ToUpperInvariant() && p.IsActive);
+                if (promotion == null)
+                    throw new Exception("PROMO_NOT_FOUND: Mã khuyến mãi không tồn tại.");
+
+                if (promotion.StartDate > DateTime.UtcNow.Date || promotion.EndDate < DateTime.UtcNow.Date)
+                    throw new Exception("PROMO_EXPIRED: Mã khuyến mãi đã hết hạn.");
+
+                if (customer != null && promotion.MinTierID.HasValue && customer.TierID < promotion.MinTierID.Value)
+                    throw new Exception("PROMO_TIER_NOT_ELIGIBLE: Bạn chưa đủ tier để dùng mã này.");
+
+                var usedPromoCount = await _context.CustomerPromotions.CountAsync(cp => cp.PromotionID == promotion.PromotionID);
+                if (promotion.MaxUsage.HasValue && usedPromoCount >= promotion.MaxUsage.Value)
+                    throw new Exception("PROMO_USAGE_LIMIT: Mã khuyến mãi đã hết lượt dùng.");
+
+                if (promotion.DiscountType == "Percentage")
+                    promotionDiscount = Math.Round(baseAmount * (promotion.DiscountValue / 100m), 0);
+                else
+                    promotionDiscount = promotion.DiscountValue;
+            }
+
+            decimal discountApplied = tierDiscount + rewardDiscount + promotionDiscount;
+            decimal finalAmount = Math.Max(0, baseAmount - discountApplied);
 
             var booking = new Booking
             {
-                CustomerID = customerId ?? 0,
-                Phone = customer?.Phone ?? request.Phone ?? string.Empty,
-                VehicleID = vehicle.VehicleID,
-                LicensePlate = vehicle.LicensePlate,
-                ServiceID = service.ServiceID,
+                CustomerID = effectiveCustomerId ?? 0,
+                Phone = phone,
+                LicensePlate = licensePlate,
+                VehicleID = selectedVehicle!.VehicleID,
+                ServiceID = request.ServiceId,
                 RewardID = request.RewardId,
-                PromotionID = null,
+                PromotionID = promotion?.PromotionID,
                 ScheduledTime = request.ScheduledTime,
                 Status = BookingStatus.Pending,
                 BaseAmount = baseAmount,
-                DiscountApplied = tierDiscount + rewardDiscount + promotionDiscount,
+                DiscountApplied = discountApplied,
                 FinalAmount = finalAmount,
-                PointsEarned = 0,
-                PointsRedeemed = 0,
-                CreatedAt = DateTime.UtcNow,
-                CompletedAt = null
+                PointsEarned = (int)Math.Max(0, Math.Floor(finalAmount / 10000m)),
+                PointsRedeemed = reward?.PointsRequired ?? 0,
+                CreatedAt = DateTime.UtcNow
             };
 
             _context.Bookings.Add(booking);
             await _context.SaveChangesAsync();
 
-            return new BookingResponse
+            if (reward != null && loyalty != null)
+            {
+                loyalty.TotalPoints -= reward.PointsRequired;
+                loyalty.LastUpdated = DateTime.UtcNow;
+
+                _context.PointTransactions.Add(new PointTransaction
+                {
+                    LoyaltyID = loyalty.LoyaltyID,
+                    Points = -reward.PointsRequired,
+                    Type = PointTransactionType.Redeem,
+                    RefBookingID = booking.BookingID,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            if (promotion != null && customer != null)
+            {
+                _context.CustomerPromotions.Add(new CustomerPromotion
+                {
+                    CustomerID = customer.CustomerID,
+                    PromotionID = promotion.PromotionID,
+                    BookingID = booking.BookingID,
+                    UsedAt = DateTime.UtcNow,
+                    DiscountAmountActual = promotionDiscount
+                });
+            }
+
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("[BR-33] Booking created BookingID={BookingId}, CustomerID={CustomerId}, Amount={Amount}",
+                booking.BookingID, customerId ?? 0, booking.FinalAmount);
+
+            return new BookingResponseDto
             {
                 BookingId = booking.BookingID,
                 Phone = booking.Phone,
                 LicensePlate = booking.LicensePlate,
-                Service = new { service.ServiceID, service.ServiceName, service.Duration },
+                Service = new ServiceResponse
+                {
+                    ServiceId = service.ServiceID,
+                    ServiceName = service.ServiceName,
+                    Duration = service.Duration,
+                    Price = service.Price,
+                    ServiceCategory = service.ServiceCategory,
+                    Status = service.Status,
+                    Description = service.Description
+                },
                 ScheduledTime = booking.ScheduledTime,
                 Status = booking.Status.ToString(),
-                Invoice = new InvoiceSummary
+                Invoice = new InvoiceResponseDto
                 {
-                    BaseAmount = booking.BaseAmount,
+                    BaseAmount = baseAmount,
                     TierDiscount = tierDiscount,
                     RewardDiscount = rewardDiscount,
                     PromotionDiscount = promotionDiscount,
-                    DiscountApplied = booking.DiscountApplied,
-                    FinalAmount = booking.FinalAmount
+                    DiscountApplied = discountApplied,
+                    FinalAmount = finalAmount
                 },
-                PointsWillEarn = 0,
+                FinalAmount = booking.FinalAmount,
+                PointsEarned = booking.PointsEarned,
                 CreatedAt = booking.CreatedAt
             };
         }
 
-        // 1. GET DANH SÁCH (Phân trang & Filter)
-        public async Task<PagedResponse<BookingResponseDto>> GetCustomerBookingsAsync(int? customerId, string? guestPhone, string? status, int page, int pageSize)
+        public async Task<PagedResponse<BookingResponseDto>> GetCustomerBookingsAsync(
+            int? customerId,
+            string? guestPhone,
+            string? status,
+            int page,
+            int pageSize)
         {
             var query = _context.Bookings.AsQueryable();
 
@@ -146,134 +416,123 @@ namespace AutoWash.Application.Services
             else
                 throw new Exception("UNAUTHORIZED: Cần cung cấp ID hoặc SĐT.");
 
-            if (!string.IsNullOrEmpty(status) && Enum.TryParse<BookingStatus>(status, true, out var parsedStatus))
+            if (!string.IsNullOrEmpty(status) &&
+                Enum.TryParse<BookingStatus>(status, true, out var parsedStatus))
+            {
                 query = query.Where(b => b.Status == parsedStatus);
+            }
 
             var total = await query.CountAsync();
-            var bookings = await query
-                .OrderByDescending(b => b.ScheduledTime)
+
+            var bookings = await (from b in query
+                                  join s in _context.Services on b.ServiceID equals s.ServiceID into sj
+                                  from svc in sj.DefaultIfEmpty()
+                                  orderby b.ScheduledTime descending
+                                  select new BookingResponseDto
+                                  {
+                                      BookingId = b.BookingID,
+                                      LicensePlate = b.LicensePlate,
+                                      ScheduledTime = b.ScheduledTime,
+                                      Status = b.Status.ToString(),
+                                      FinalAmount = b.FinalAmount,
+                                      PointsEarned = b.PointsEarned,
+                                      Service = svc == null ? new ServiceResponse() : new ServiceResponse
+                                      {
+                                          ServiceId = svc.ServiceID,
+                                          ServiceName = svc.ServiceName,
+                                          Price = svc.Price,
+                                          Duration = svc.Duration,
+                                          Description = svc.Description,
+                                          Status = svc.Status,
+                                      },
+                                      CreatedAt = b.CreatedAt
+                                  })
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .Select(b => new BookingResponseDto
-                {
-                    BookingId = b.BookingID,
-                    LicensePlate = b.LicensePlate,
-                    ServiceName = "Auto-mapped from Service entity",
-                    ScheduledTime = b.ScheduledTime,
-                    Status = b.Status.ToString(),
-                    FinalAmount = b.FinalAmount,
-                    PointsEarned = b.PointsEarned
-                }).ToListAsync();
+                .ToListAsync();
 
-            return new PagedResponse<BookingResponseDto> { Page = page, Total = total, Data = bookings };
-        }
-
-        // 2. GET CHI TIẾT
-        public async Task<BookingResponseDto> GetBookingByIdAsync(int bookingId, int? customerId, string? guestPhone)
-        {
-            var booking = await _context.Bookings.FirstOrDefaultAsync(b => b.BookingID == bookingId);
-
-            if (booking == null) throw new Exception("NOT_FOUND: Không tìm thấy lịch đặt.");
-
-            if (customerId.HasValue && booking.CustomerID != customerId) throw new Exception("UNAUTHORIZED: Không có quyền truy cập.");
-            if (!customerId.HasValue && booking.Phone != guestPhone) throw new Exception("UNAUTHORIZED: Không có quyền truy cập.");
-
-            return new BookingResponseDto
+            return new PagedResponse<BookingResponseDto>
             {
-                BookingId = booking.BookingID,
-                LicensePlate = booking.LicensePlate,
-                ScheduledTime = booking.ScheduledTime,
-                Status = booking.Status.ToString(),
-                FinalAmount = booking.FinalAmount,
-                PointsEarned = booking.PointsEarned
+                Data = bookings,
+                Page = page,
+                PageSize = pageSize,
+                Total = total
             };
         }
 
-        // 3. CANCEL BOOKING
+        public async Task<BookingResponseDto> GetBookingByIdAsync(int bookingId, int? customerId, string? guestPhone)
+        {
+            var query = _context.Bookings.AsQueryable();
+
+            if (customerId.HasValue)
+                query = query.Where(b => b.CustomerID == customerId.Value);
+            else if (!string.IsNullOrEmpty(guestPhone))
+                query = query.Where(b => b.Phone == guestPhone);
+            else
+                throw new Exception("UNAUTHORIZED: Cần cung cấp ID hoặc SĐT.");
+
+            var booking = await (from b in query
+                                 join s in _context.Services on b.ServiceID equals s.ServiceID into sj
+                                 from svc in sj.DefaultIfEmpty()
+                                 where b.BookingID == bookingId
+                                 select new BookingResponseDto
+                                 {
+                                     BookingId = b.BookingID,
+                                     LicensePlate = b.LicensePlate,
+                                     ScheduledTime = b.ScheduledTime,
+                                     Status = b.Status.ToString(),
+                                     FinalAmount = b.FinalAmount,
+                                     PointsEarned = b.PointsEarned,
+                                     Service = svc == null ? new ServiceResponse() : new ServiceResponse
+                                     {
+                                         ServiceId = svc.ServiceID,
+                                         ServiceName = svc.ServiceName,
+                                         Price = svc.Price,
+                                         Duration = svc.Duration,
+                                         Description = svc.Description,
+                                         Status = svc.Status,
+                                     },
+                                     CreatedAt = b.CreatedAt
+                                 }).FirstOrDefaultAsync();
+
+            if (booking == null)
+                throw new Exception("NOT_FOUND: Không tìm thấy booking.");
+
+            return booking;
+        }
+
         public async Task<CancelBookingResponseDto> CancelBookingAsync(int bookingId, int? customerId, string? guestPhone)
         {
             var booking = await _context.Bookings.FirstOrDefaultAsync(b => b.BookingID == bookingId);
-            if (booking == null) throw new Exception("NOT_FOUND: Không tìm thấy lịch đặt.");
+            if (booking == null)
+                throw new Exception("NOT_FOUND: Không tìm thấy booking.");
 
-            // Xác thực quyền
-            if (customerId.HasValue)
-            {
-                if (booking.CustomerID != customerId.Value)
-                    throw new Exception("UNAUTHORIZED: Bạn không có quyền hủy lịch này.");
-            }
-            else if (!string.IsNullOrEmpty(guestPhone))
-            {
-                if (booking.Phone != guestPhone)
-                    throw new Exception("UNAUTHORIZED: Số điện thoại không khớp với lịch đặt.");
-            }
-            else
-            {
-                throw new Exception("UNAUTHORIZED: Cần thông tin đăng nhập hoặc SĐT.");
-            }
-
-            // Check Status & Time
             if (booking.Status != BookingStatus.Pending)
-                throw new Exception("INVALID_STATUS: Đơn này không thể hủy.");
-
-            if ((booking.ScheduledTime - DateTime.UtcNow).TotalHours < 2)
-                throw new Exception("CANCEL_TOO_LATE: Chỉ được hủy trước giờ hẹn 2 tiếng.");
+                throw new Exception("INVALID_STATUS: Chỉ có thể hủy lịch đang chờ.");
 
             booking.Status = BookingStatus.Cancelled;
+            booking.CompletedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
             return new CancelBookingResponseDto
             {
                 BookingId = booking.BookingID,
-                Status = "Cancelled",
-                Message = "Hủy lịch thành công."
+                Status = booking.Status.ToString(),
+                Message = "Đã hủy lịch hẹn thành công."
             };
         }
 
-        public Task GetCustomerBookingsAsync(int customerId, string? status, int page, int pageSize)
-        {
-            throw new NotImplementedException();
-        }
-
-        // BR-21: Staff/Admin hoàn tất booking → cập nhật TotalSpending → trigger upgrade tier
         public async Task<BookingResponseDto> CompleteBookingAsync(int bookingId)
         {
             var booking = await _context.Bookings.FirstOrDefaultAsync(b => b.BookingID == bookingId);
-            if (booking == null) throw new Exception("NOT_FOUND: Không tìm thấy lịch đặt.");
+            if (booking == null)
+                throw new Exception("NOT_FOUND: Không tìm thấy booking.");
 
             if (booking.Status != BookingStatus.Pending)
                 throw new Exception("INVALID_STATUS: Chỉ có thể hoàn thành booking ở trạng thái Pending.");
 
             booking.Status = BookingStatus.Completed;
             booking.CompletedAt = DateTime.UtcNow;
-
-            // Cộng TotalSpending cho member (CustomerID = 0 nghĩa là guest)
-            if (booking.CustomerID > 0)
-            {
-                var customer = await _context.Customers
-                    .FirstOrDefaultAsync(c => c.CustomerID == booking.CustomerID);
-
-                if (customer != null)
-                {
-                    customer.TotalSpending += booking.FinalAmount;
-                    await _context.SaveChangesAsync();
-
-                    // BR-21: evaluate upgrade real-time
-                    await _tierService.EvaluateUpgradeAsync(customer.CustomerID);
-
-                    _logger.LogInformation("[CompleteBooking] BookingID={Id} completed, CustomerID={Cid}, Amount={Amt}",
-                        bookingId, customer.CustomerID, booking.FinalAmount);
-                    return new BookingResponseDto
-                    {
-                        BookingId = booking.BookingID,
-                        LicensePlate = booking.LicensePlate,
-                        ScheduledTime = booking.ScheduledTime,
-                        Status = booking.Status.ToString(),
-                        FinalAmount = booking.FinalAmount,
-                        PointsEarned = booking.PointsEarned
-                    };
-                }
-            }
-
             await _context.SaveChangesAsync();
 
             return new BookingResponseDto
@@ -283,8 +542,38 @@ namespace AutoWash.Application.Services
                 ScheduledTime = booking.ScheduledTime,
                 Status = booking.Status.ToString(),
                 FinalAmount = booking.FinalAmount,
-                PointsEarned = booking.PointsEarned
+                PointsEarned = booking.PointsEarned,
+                CreatedAt = booking.CreatedAt
             };
+        }
+
+        public async Task<IEnumerable<AvailableSlotResponse>> GetAvailableSlotsAsync(int? customerId, string? dateStr, string? licensePlate)
+        {
+            var date = DateTime.UtcNow.Date;
+            if (!string.IsNullOrWhiteSpace(dateStr))
+            {
+                if (!DateTime.TryParse(dateStr, out var parsedDate))
+                    throw new Exception("INVALID_DATE: Ngày không hợp lệ.");
+                date = parsedDate.Date;
+            }
+
+            var response = new AvailableSlotResponse
+            {
+                Date = date.ToString("yyyy-MM-dd"),
+                Slots = new List<TimeSlotDto>()
+            };
+
+            for (var hour = 8; hour <= 18; hour++)
+            {
+                response.Slots.Add(new TimeSlotDto
+                {
+                    Time = new DateTime(date.Year, date.Month, date.Day, hour, 0, 0, DateTimeKind.Utc).ToString("HH:mm"),
+                    IsAvailable = true,
+                    AvailableCount = 1
+                });
+            }
+
+            return new[] { response };
         }
     }
 }

@@ -1,3 +1,5 @@
+using System;
+
 namespace AutoWash.Application.DTOs
 {
   public class CreateBookingRequest
@@ -7,7 +9,7 @@ namespace AutoWash.Application.DTOs
     public int? VehicleId { get; set; }
     public int ServiceId { get; set; }
     public DateTime ScheduledTime { get; set; }
-    public int? RewardId { get; set; }
     public string? PromoCode { get; set; }
+    public int? RewardId { get; set; }
   }
 }

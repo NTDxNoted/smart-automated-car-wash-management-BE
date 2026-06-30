@@ -11,10 +11,25 @@ using AutoWash.Infrastructure.Jobs;
 using AutoWashPro.API.Middleware;
 
 
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
 // 1. Thêm dịch vụ Controller
 builder.Services.AddControllers();
+builder.Services.Configure<AutoWash.Application.DTOs.BookingSettings>(builder.Configuration.GetSection("BookingSettings"));
+
+// CORS — cho phép frontend dev server gọi API
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("FrontendDev", policy =>
+    {
+        policy.SetIsOriginAllowed(origin => true)
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
 
 // 2. Thêm dịch vụ Swagger
 builder.Services.AddEndpointsApiExplorer();
@@ -44,6 +59,7 @@ builder.Services.AddAuthentication(options =>
 });
 
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IAdminAuthService, AdminAuthService>();
 
 // Nối IBookingService tới BookingService
 builder.Services.AddScoped<IBookingsService, BookingService>();
@@ -72,6 +88,20 @@ builder.Services.AddHostedService<TierDowngradeJob>();
 builder.Services.AddScoped<IAdminBookingService, AdminBookingService>();
 builder.Services.AddHostedService<AutoNoShowJob>();
 
+// ISSUE-09: Offline Payment Processing
+builder.Services.AddScoped<IPaymentService, PaymentService>();
+builder.Services.AddScoped<IPointService, PointService>();
+builder.Services.AddScoped<TransactionRepository>();
+
+// ISSUE-12: Admin Reports & RFM Dashboard
+builder.Services.AddScoped<IReportService, ReportService>();
+
+// ISSUE-10: Loyalty Points & Redemption (PointExpiryJob + repository)
+builder.Services.AddScoped<PointTransactionRepository>();
+builder.Services.AddHostedService<PointExpiryJob>();
+
+// ISSUE-05: Promotion Management
+builder.Services.AddScoped<IPromotionService, PromotionService>();
 builder.Services.AddAuthorization();
 var app = builder.Build();
 
@@ -82,10 +112,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection();
+app.UseCors("FrontendDev");
 
 // ISSUE-01: JWT Middleware
 app.UseMiddleware<JwtMiddleware>();
+app.UseMiddleware<RoleAuthorizationMiddleware>();
 
 app.UseAuthentication();
 app.UseAuthorization();
