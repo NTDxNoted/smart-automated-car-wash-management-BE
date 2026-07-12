@@ -1,10 +1,13 @@
 using AutoWash.Application.DTOs.Admin;
+using System.Collections.Generic;
+using System;
 
 namespace AutoWash.Application.Interfaces
 {
   public interface IReportService
   {
-    Task<OverviewReportResponse> GetOverviewReportAsync();
+    Task<OverviewReportResponse> GetOverviewReportAsync(string filterType, DateTime? startDate, DateTime? endDate);
+    Task<IReadOnlyList<PopularServiceResponse>> GetPopularServicesReportAsync(DateTime? startDate, DateTime? endDate);
     Task<IReadOnlyList<RfmReportResponse>> GetRfmReportAsync();
     Task<IReadOnlyList<TierDistributionResponse>> GetTierDistributionAsync();
     Task<LoyaltyStatsResponse> GetLoyaltyStatsAsync();

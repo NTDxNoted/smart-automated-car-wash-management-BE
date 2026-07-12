@@ -17,16 +17,30 @@ namespace AutoWashPro.API.Controllers.Admin
     }
 
     [HttpGet("overview")]
-    public async Task<IActionResult> GetOverview()
+    public async Task<IActionResult> GetOverview([FromQuery] string? filterType, [FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate)
     {
       try
       {
-        var result = await _reportService.GetOverviewReportAsync();
+        var result = await _reportService.GetOverviewReportAsync(filterType, startDate, endDate);
         return Ok(result);
       }
       catch (Exception ex)
       {
         return BadRequest(new { error = "GET_OVERVIEW_FAILED", message = ex.Message });
+      }
+    }
+
+    [HttpGet("popular-services")]
+    public async Task<IActionResult> GetPopularServices([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate)
+    {
+      try
+      {
+        var result = await _reportService.GetPopularServicesReportAsync(startDate, endDate);
+        return Ok(result);
+      }
+      catch (Exception ex)
+      {
+        return BadRequest(new { error = "GET_POPULAR_SERVICES_FAILED", message = ex.Message });
       }
     }
 

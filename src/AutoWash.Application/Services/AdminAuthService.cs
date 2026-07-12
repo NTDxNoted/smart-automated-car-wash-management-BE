@@ -104,8 +104,8 @@ namespace AutoWash.Application.Services
                 new Claim(JwtRegisteredClaimNames.Sub, customer.CustomerID.ToString()),
                 new Claim(ClaimTypes.NameIdentifier, customer.CustomerID.ToString()),
                 new Claim(ClaimTypes.Name, customer.FullName),
-                new Claim("role", "Admin"),
-                new Claim(ClaimTypes.Role, "Admin"),
+                new Claim("role", "ADMIN"),
+                new Claim(ClaimTypes.Role, "ADMIN"),
                 new Claim("phone", customer.Phone)
             };
 
