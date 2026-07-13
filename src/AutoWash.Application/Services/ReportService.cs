@@ -1,4 +1,3 @@
-using AutoWash.Application.DTOs;
 using AutoWash.Application.DTOs.Admin;
 using AutoWash.Application.Interfaces;
 using AutoWash.Domain.Enums;
@@ -15,13 +14,43 @@ namespace AutoWash.Application.Services
       _context = context;
     }
 
-    public async Task<OverviewReportResponse> GetOverviewReportAsync()
+    public async Task<OverviewReportResponse> GetOverviewReportAsync(string filterType, DateTime? startDate, DateTime? endDate)
     {
       var now = DateTime.UtcNow;
-      var startOfMonth = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+      DateTime start = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+      DateTime end = start.AddMonths(1);
+
+      if (!string.IsNullOrEmpty(filterType))
+      {
+          switch (filterType.ToLower())
+          {
+              case "day":
+                  start = DateTime.UtcNow.Date;
+                  end = start.AddDays(1);
+                  break;
+              case "week":
+                  int diff = (7 + (now.DayOfWeek - DayOfWeek.Monday)) % 7;
+                  start = now.AddDays(-1 * diff).Date;
+                  end = start.AddDays(7);
+                  break;
+              case "month":
+                  start = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+                  end = start.AddMonths(1);
+                  break;
+              case "year":
+                  start = new DateTime(now.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                  end = start.AddYears(1);
+                  break;
+          }
+      }
+      else if (startDate.HasValue && endDate.HasValue)
+      {
+          start = startDate.Value.Date;
+          end = endDate.Value.Date.AddDays(1);
+      }
 
       var bookings = await _context.Bookings
-          .Where(b => b.CreatedAt >= startOfMonth && b.CreatedAt < startOfMonth.AddMonths(1))
+          .Where(b => b.CreatedAt >= start && b.CreatedAt < end)
           .ToListAsync();
 
       var totalBookings = bookings.Count;
@@ -33,7 +62,7 @@ namespace AutoWash.Application.Services
 
       return new OverviewReportResponse
       {
-        Period = now.ToString("yyyy-MM"),
+        Period = filterType ?? "custom",
         TotalBookings = totalBookings,
         CompletedBookings = completedBookings,
         FailedBookings = failedBookings,
@@ -43,6 +72,44 @@ namespace AutoWash.Application.Services
         NoShowRate = totalBookings == 0 ? 0m : Math.Round((decimal)noShowBookings / totalBookings, 4),
         AvgOrderValue = totalBookings == 0 ? 0m : Math.Round(totalRevenue / totalBookings, 2)
       };
+    }
+
+    public async Task<IReadOnlyList<PopularServiceResponse>> GetPopularServicesReportAsync(DateTime? startDate, DateTime? endDate)
+    {
+      var query = _context.Bookings
+          .Where(b => b.Status == BookingStatus.Completed);
+
+      if (startDate.HasValue)
+      {
+          query = query.Where(b => b.CreatedAt >= startDate.Value.Date);
+      }
+      if (endDate.HasValue)
+      {
+          query = query.Where(b => b.CreatedAt < endDate.Value.Date.AddDays(1));
+      }
+
+      var completedBookings = await query.ToListAsync();
+      var totalCount = completedBookings.Count;
+
+      var services = await _context.Services.ToListAsync();
+
+      var result = completedBookings
+          .GroupBy(b => b.ServiceID)
+          .Select(g => {
+              var service = services.FirstOrDefault(s => s.ServiceID == g.Key);
+              return new PopularServiceResponse
+              {
+                  ServiceId = g.Key,
+                  ServiceName = service?.ServiceName ?? "Dịch vụ không xác định",
+                  UsageCount = g.Count(),
+                  TotalRevenue = g.Sum(b => b.FinalAmount),
+                  Percentage = totalCount == 0 ? 0m : Math.Round((decimal)g.Count() * 100m / totalCount, 2)
+              };
+          })
+          .OrderByDescending(x => x.UsageCount)
+          .ToList();
+
+      return result.AsReadOnly();
     }
 
     public async Task<IReadOnlyList<RfmReportResponse>> GetRfmReportAsync()
@@ -181,47 +248,6 @@ namespace AutoWash.Application.Services
         DayOfWeekStats = dayStats,
         HourStats = hourStats
       };
-    }
-
-    public async Task<IReadOnlyList<PopularServiceResponse>> GetPopularServicesReportAsync(DateTime startDate, DateTime endDate)
-    {
-      var rangeStart = startDate.Date;
-      var rangeEnd = endDate.Date.AddDays(1);
-
-      var bookedServices = await (
-          from b in _context.Bookings
-          join t in _context.Transactions on b.BookingID equals t.BookingID
-          join s in _context.Services on b.ServiceID equals s.ServiceID
-          where b.Status == BookingStatus.Completed
-             && t.Status == TransactionStatus.Paid
-             && b.CompletedAt >= rangeStart
-             && b.CompletedAt < rangeEnd
-          group new { b, s } by new { b.ServiceID, s.ServiceName } into g
-          select new PopularServiceResponse
-          {
-            ServiceId = g.Key.ServiceID,
-            ServiceName = g.Key.ServiceName,
-            TotalWashes = g.Count(),
-            Revenue = g.Sum(x => x.b.FinalAmount)
-          }
-      ).ToListAsync();
-
-      var totalRevenue = bookedServices.Sum(x => x.Revenue);
-
-      var result = bookedServices
-          .OrderByDescending(x => x.Revenue)
-          .ThenBy(x => x.ServiceName)
-          .Select(x => new PopularServiceResponse
-          {
-            ServiceId = x.ServiceId,
-            ServiceName = x.ServiceName,
-            TotalWashes = x.TotalWashes,
-            Revenue = x.Revenue,
-            RevenueContributionPercentage = totalRevenue == 0 ? 0m : Math.Round(x.Revenue / totalRevenue * 100m, 2)
-          })
-          .ToList();
-
-      return result;
     }
 
     public async Task<PromotionRoiResponse> GetPromotionRoiReportAsync(DateTime startDate, DateTime endDate)

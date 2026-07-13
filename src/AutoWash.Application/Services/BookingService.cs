@@ -60,6 +60,7 @@ namespace AutoWash.Application.Services
             _bookingSettings = bookingSettings.Value;
         }
 
+        // POST /api/Bookings
         public async Task<BookingResponseDto> CreateBookingAsync(CreateBookingRequest request, int? customerId)
         {
             if (request.ServiceId <= 0)
@@ -148,9 +149,9 @@ namespace AutoWash.Application.Services
 
                 effectiveCustomerId = customer.CustomerID;
                 selectedVehicle = await _context.Vehicles
-                    .FirstOrDefaultAsync(v =>
-                        v.CustomerID == customer.CustomerID &&
-                        v.LicensePlate == licensePlate);
+    .FirstOrDefaultAsync(v =>
+        v.CustomerID == customer.CustomerID &&
+        v.LicensePlate == licensePlate);
 
                 if (selectedVehicle == null)
                 {
@@ -400,6 +401,7 @@ namespace AutoWash.Application.Services
             };
         }
 
+        // GET /api/Bookings
         public async Task<PagedResponse<BookingResponseDto>> GetCustomerBookingsAsync(
             int? customerId,
             string? guestPhone,
@@ -407,7 +409,168 @@ namespace AutoWash.Application.Services
             int page,
             int pageSize)
         {
-            var query = _context.Bookings.AsQueryable();
+            if (request.ServiceId <= 0)
+                throw new Exception("SERVICE_REQUIRED: Vui lòng chọn dịch vụ.");
+
+            if (request.ScheduledTime <= DateTime.UtcNow.AddMinutes(60))
+                throw new Exception("ADVANCE_NOTICE_VIOLATION: Phải đặt lịch trước ít nhất 60 phút.");
+
+            Customer? customer = null;
+            Tier? tier = null;
+            LoyaltyAccount? loyalty = null;
+            Vehicle? selectedVehicle = null;
+            int? effectiveCustomerId = customerId;
+
+            string phone;
+            string licensePlate;
+
+            if (customerId.HasValue)
+            {
+                customer = await _context.Customers
+                    .FirstOrDefaultAsync(c => c.CustomerID == customerId.Value);
+
+                if (customer == null)
+                    throw new Exception("CUSTOMER_NOT_FOUND: Không tìm thấy khách hàng.");
+
+                if (customer.IsLocked)
+                    throw new Exception("ACCOUNT_LOCKED: Tài khoản đang bị khóa.");
+
+                if (customer.SuspendedUntil.HasValue &&
+                    customer.SuspendedUntil.Value > DateTime.UtcNow)
+                    throw new Exception("SUSPENDED_ACCOUNT: Tài khoản đang bị tạm khóa.");
+
+                tier = await _context.Tiers.FirstOrDefaultAsync(t => t.TierID == customer.TierID);
+                if (tier == null)
+                    throw new Exception("TIER_NOT_FOUND: Không tìm thấy tier của khách hàng.");
+
+                loyalty = await _context.LoyaltyAccounts.FirstOrDefaultAsync(l => l.CustomerID == customer.CustomerID);
+
+                phone = customer.Phone;
+
+                if (!request.VehicleId.HasValue || request.VehicleId.Value <= 0)
+                    throw new Exception("VEHICLE_REQUIRED: Member phải truyền vehicleId.");
+
+                selectedVehicle = await _context.Vehicles
+                    .FirstOrDefaultAsync(v =>
+                        v.VehicleID == request.VehicleId.Value &&
+                        v.CustomerID == customerId.Value);
+
+                if (selectedVehicle == null)
+                    throw new Exception("VEHICLE_NOT_FOUND: Không tìm thấy xe của khách hàng.");
+
+                licensePlate = selectedVehicle.LicensePlate;
+                if (request.ScheduledTime > DateTime.UtcNow.AddDays(tier.BookingWindowDays))
+                    throw new Exception("BOOKING_WINDOW_VIOLATION: Lịch đặt vượt quá khung thời gian theo tier.");
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(request.Phone))
+                    throw new Exception("PHONE_REQUIRED: Guest phải nhập số điện thoại.");
+
+            if (!string.IsNullOrEmpty(status) &&
+                Enum.TryParse<BookingStatus>(status, true, out var parsedStatus))
+            {
+                query = query.Where(b => b.Status == parsedStatus);
+            }
+
+            var total = await query.CountAsync();
+
+            var bookings = await (from b in query
+                join s in _context.Services on b.ServiceID equals s.ServiceID into sj
+                from svc in sj.DefaultIfEmpty()
+                orderby b.ScheduledTime descending
+                select new BookingResponseDto
+                {
+                    BookingId = b.BookingID,
+                    LicensePlate = b.LicensePlate,
+                    ScheduledTime = b.ScheduledTime,
+                    Status = b.Status.ToString(),
+                    FinalAmount = b.FinalAmount,
+                    PointsEarned = b.PointsEarned,
+                    Service = svc == null ? new ServiceResponse() : new ServiceResponse
+                    {
+                        ServiceId = svc.ServiceID,
+                        ServiceName = svc.ServiceName,
+                        Price = svc.Price,
+                        Duration = svc.Duration,
+                        Description = svc.Description,
+                        Status = svc.Status,
+                    },
+                })
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new PagedResponse<BookingResponseDto>
+            {
+                Page = page,
+                Total = total,
+                PageSize = pageSize,
+                Data = bookings
+            };
+        }
+
+        // GET /api/Bookings/{id}
+        public async Task<BookingResponseDto> GetBookingByIdAsync(
+            int bookingId,
+            int? customerId,
+            string? guestPhone)
+        {
+            var booking = await _context.Bookings
+                .FirstOrDefaultAsync(b => b.BookingID == bookingId);
+
+            if (booking == null)
+                throw new Exception("NOT_FOUND: Không tìm thấy lịch đặt.");
+
+            if (customerId.HasValue && booking.CustomerID != customerId.Value)
+                throw new Exception("UNAUTHORIZED: Không có quyền truy cập.");
+
+            if (!customerId.HasValue && booking.Phone != guestPhone)
+                throw new Exception("UNAUTHORIZED: Không có quyền truy cập.");
+
+            return new BookingResponseDto
+            {
+                BookingId = booking.BookingID,
+                Phone = booking.Phone,
+                LicensePlate = booking.LicensePlate,
+                Service = new ServiceResponse
+                {
+                    ServiceId = service.ServiceID,
+                    ServiceName = service.ServiceName,
+                    Duration = service.Duration,
+                    Price = service.Price,
+                    ServiceCategory = service.ServiceCategory,
+                    Status = service.Status,
+                    Description = service.Description
+                },
+                ScheduledTime = booking.ScheduledTime,
+                Status = booking.Status.ToString(),
+                Invoice = new InvoiceResponseDto
+                {
+                    BaseAmount = baseAmount,
+                    TierDiscount = tierDiscount,
+                    RewardDiscount = rewardDiscount,
+                    PromotionDiscount = promotionDiscount,
+                    DiscountApplied = discountApplied,
+                    FinalAmount = finalAmount
+                },
+                FinalAmount = booking.FinalAmount,
+                PointsEarned = booking.PointsEarned,
+                CreatedAt = booking.CreatedAt
+            };
+        }
+
+        // POST /api/Bookings/{id}/cancel
+        public async Task<CancelBookingResponseDto> CancelBookingAsync(
+            int bookingId,
+            int? customerId,
+            string? guestPhone)
+        {
+            var booking = await _context.Bookings
+                .FirstOrDefaultAsync(b => b.BookingID == bookingId);
+
+            if (booking == null)
+                throw new Exception("NOT_FOUND: Không tìm thấy lịch đặt.");
 
             if (customerId.HasValue)
                 query = query.Where(b => b.CustomerID == customerId.Value);
@@ -422,90 +585,54 @@ namespace AutoWash.Application.Services
                 query = query.Where(b => b.Status == parsedStatus);
             }
 
-            var total = await query.CountAsync();
+            if (booking.Status != BookingStatus.Pending)
+                throw new Exception("INVALID_STATUS: Đơn này không thể hủy.");
 
-            var bookings = await (from b in query
-                                  join s in _context.Services on b.ServiceID equals s.ServiceID into sj
-                                  from svc in sj.DefaultIfEmpty()
-                                  orderby b.ScheduledTime descending
-                                  select new BookingResponseDto
-                                  {
-                                      BookingId = b.BookingID,
-                                      LicensePlate = b.LicensePlate,
-                                      ScheduledTime = b.ScheduledTime,
-                                      Status = b.Status.ToString(),
-                                      FinalAmount = b.FinalAmount,
-                                      PointsEarned = b.PointsEarned,
-                                      Service = svc == null ? new ServiceResponse() : new ServiceResponse
-                                      {
-                                          ServiceId = svc.ServiceID,
-                                          ServiceName = svc.ServiceName,
-                                          Price = svc.Price,
-                                          Duration = svc.Duration,
-                                          Description = svc.Description,
-                                          Status = svc.Status,
-                                      },
-                                      CreatedAt = b.CreatedAt
-                                  })
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
+            if ((booking.ScheduledTime - DateTime.UtcNow).TotalHours < 2)
+                throw new Exception("CANCEL_TOO_LATE: Chỉ được hủy trước giờ hẹn 2 tiếng.");
+
+            booking.Status = BookingStatus.Cancelled;
+
+            int pointsRefunded = booking.PointsRedeemed;
+            if (pointsRefunded > 0 && booking.CustomerID > 0)
+            {
+                var loyalty = await _context.LoyaltyAccounts
+                    .FirstOrDefaultAsync(l => l.CustomerID == booking.CustomerID);
+                if (loyalty != null)
+                {
+                    loyalty.TotalPoints += pointsRefunded;
+                    loyalty.LastUpdated = DateTime.UtcNow;
+
+                    _context.PointTransactions.Add(new PointTransaction
+                    {
+                        LoyaltyID = loyalty.LoyaltyID,
+                        Points = pointsRefunded,
+                        Type = PointTransactionType.Earn, // Earn represents positive points change
+                        RefBookingID = booking.BookingID,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+
+            await _context.SaveChangesAsync();
 
             return new PagedResponse<BookingResponseDto>
             {
-                Data = bookings,
-                Page = page,
-                PageSize = pageSize,
-                Total = total
+                BookingId = booking.BookingID,
+                Status = "Cancelled",
+                PointsRefunded = pointsRefunded,
+                Message = "Hủy lịch thành công."
             };
         }
 
-        public async Task<BookingResponseDto> GetBookingByIdAsync(int bookingId, int? customerId, string? guestPhone)
+        // POST /api/Bookings/{id}/complete
+        public async Task<BookingResponseDto> CompleteBookingAsync(int bookingId)
         {
-            var query = _context.Bookings.AsQueryable();
-
-            if (customerId.HasValue)
-                query = query.Where(b => b.CustomerID == customerId.Value);
-            else if (!string.IsNullOrEmpty(guestPhone))
-                query = query.Where(b => b.Phone == guestPhone);
-            else
-                throw new Exception("UNAUTHORIZED: Cần cung cấp ID hoặc SĐT.");
-
-            var booking = await (from b in query
-                                 join s in _context.Services on b.ServiceID equals s.ServiceID into sj
-                                 from svc in sj.DefaultIfEmpty()
-                                 where b.BookingID == bookingId
-                                 select new BookingResponseDto
-                                 {
-                                     BookingId = b.BookingID,
-                                     LicensePlate = b.LicensePlate,
-                                     ScheduledTime = b.ScheduledTime,
-                                     Status = b.Status.ToString(),
-                                     FinalAmount = b.FinalAmount,
-                                     PointsEarned = b.PointsEarned,
-                                     Service = svc == null ? new ServiceResponse() : new ServiceResponse
-                                     {
-                                         ServiceId = svc.ServiceID,
-                                         ServiceName = svc.ServiceName,
-                                         Price = svc.Price,
-                                         Duration = svc.Duration,
-                                         Description = svc.Description,
-                                         Status = svc.Status,
-                                     },
-                                     CreatedAt = b.CreatedAt
-                                 }).FirstOrDefaultAsync();
+            var booking = await _context.Bookings
+                .FirstOrDefaultAsync(b => b.BookingID == bookingId);
 
             if (booking == null)
-                throw new Exception("NOT_FOUND: Không tìm thấy booking.");
-
-            return booking;
-        }
-
-        public async Task<CancelBookingResponseDto> CancelBookingAsync(int bookingId, int? customerId, string? guestPhone)
-        {
-            var booking = await _context.Bookings.FirstOrDefaultAsync(b => b.BookingID == bookingId);
-            if (booking == null)
-                throw new Exception("NOT_FOUND: Không tìm thấy booking.");
+                throw new Exception("NOT_FOUND: Không tìm thấy lịch đặt.");
 
             if (booking.Status != BookingStatus.Pending)
                 throw new Exception("INVALID_STATUS: Chỉ có thể hủy lịch đang chờ.");
@@ -514,22 +641,31 @@ namespace AutoWash.Application.Services
             booking.CompletedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
-            return new CancelBookingResponseDto
+            if (booking.CustomerID > 0)
             {
-                BookingId = booking.BookingID,
-                Status = booking.Status.ToString(),
-                Message = "Đã hủy lịch hẹn thành công."
-            };
-        }
+                var customer = await _context.Customers
+                    .FirstOrDefaultAsync(c => c.CustomerID == booking.CustomerID);
 
-        public async Task<BookingResponseDto> CompleteBookingAsync(int bookingId)
-        {
-            var booking = await _context.Bookings.FirstOrDefaultAsync(b => b.BookingID == bookingId);
-            if (booking == null)
-                throw new Exception("NOT_FOUND: Không tìm thấy booking.");
+                if (customer != null)
+                {
+                    customer.TotalSpending += booking.FinalAmount;
 
-            if (booking.Status != BookingStatus.Pending)
-                throw new Exception("INVALID_STATUS: Chỉ có thể hoàn thành booking ở trạng thái Pending.");
+                    await _context.SaveChangesAsync();
+
+                    await _tierService.EvaluateUpgradeAsync(customer.CustomerID);
+
+                    if (_pointService != null)
+                    {
+                        await _pointService.EarnPointsAsync(booking.BookingID);
+                    }
+
+                    _logger.LogInformation(
+                        "[CompleteBooking] BookingID={Id} completed, CustomerID={Cid}, Amount={Amt}",
+                        bookingId,
+                        customer.CustomerID,
+                        booking.FinalAmount);
+                }
+            }
 
             booking.Status = BookingStatus.Completed;
             booking.CompletedAt = DateTime.UtcNow;
@@ -549,31 +685,124 @@ namespace AutoWash.Application.Services
 
         public async Task<IEnumerable<AvailableSlotResponse>> GetAvailableSlotsAsync(int? customerId, string? dateStr, string? licensePlate)
         {
-            var date = DateTime.UtcNow.Date;
-            if (!string.IsNullOrWhiteSpace(dateStr))
+            var windowDays = 7;
+            if (customerId.HasValue && customerId.Value > 0)
             {
-                if (!DateTime.TryParse(dateStr, out var parsedDate))
-                    throw new Exception("INVALID_DATE: Ngày không hợp lệ.");
-                date = parsedDate.Date;
-            }
-
-            var response = new AvailableSlotResponse
-            {
-                Date = date.ToString("yyyy-MM-dd"),
-                Slots = new List<TimeSlotDto>()
-            };
-
-            for (var hour = 8; hour <= 18; hour++)
-            {
-                response.Slots.Add(new TimeSlotDto
+                var customer = await _context.Customers
+                    .FirstOrDefaultAsync(c => c.CustomerID == customerId.Value);
+                if (customer != null)
                 {
-                    Time = new DateTime(date.Year, date.Month, date.Day, hour, 0, 0, DateTimeKind.Utc).ToString("HH:mm"),
-                    IsAvailable = true,
-                    AvailableCount = 1
-                });
+                    var tier = await _context.Tiers.FirstOrDefaultAsync(t => t.TierID == customer.TierID);
+                    if (tier != null)
+                    {
+                        windowDays = tier.BookingWindowDays;
+                    }
+                }
             }
 
-            return new[] { response };
+            var currentUtc = DateTime.UtcNow;
+            var todayLocal = currentUtc.AddHours(7).Date;
+
+            var datesToGenerate = new List<DateTime>();
+            for (int i = 0; i < windowDays; i++)
+            {
+                datesToGenerate.Add(todayLocal.AddDays(i));
+            }
+
+            if (!string.IsNullOrEmpty(dateStr))
+            {
+                if (DateTime.TryParse(dateStr, out var requestedDate))
+                {
+                    datesToGenerate = datesToGenerate.Where(d => d.Date == requestedDate.Date).ToList();
+                }
+            }
+
+            var minDateUtc = todayLocal.AddHours(-7);
+            var maxDateUtc = todayLocal.AddDays(windowDays).AddHours(24 - 7);
+
+            var activeBookings = await _context.Bookings
+                .Where(b => (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Completed)
+                         && b.ScheduledTime >= minDateUtc
+                         && b.ScheduledTime <= maxDateUtc)
+                .Select(b => new
+                {
+                    b.ScheduledTime,
+                    Duration = _context.Services.Where(s => s.ServiceID == b.ServiceID).Select(s => s.Duration).FirstOrDefault(),
+                    b.LicensePlate
+                })
+                .ToListAsync();
+
+            var result = new List<AvailableSlotResponse>();
+
+            foreach (var date in datesToGenerate)
+            {
+                var response = new AvailableSlotResponse { Date = date.ToString("yyyy-MM-dd"), Slots = new List<TimeSlotDto>() };
+                var startTime = date.AddHours(7).AddMinutes(30); // 07:30 local
+                var endTime = date.AddHours(19).AddMinutes(30); // 19:30 local
+
+                for (var slotLocal = startTime; slotLocal <= endTime; slotLocal = slotLocal.AddMinutes(60))
+                {
+                    var slotUtc = slotLocal.AddHours(-7);
+
+                    bool isAvailable = true;
+                    int maxParallelSlots = _bookingSettings.MaxParallelSlots > 0 ? _bookingSettings.MaxParallelSlots : 1;
+                    int availableCount = maxParallelSlots;
+
+                    // BR-29: Advance Notice 60 mins
+                    if (slotUtc < currentUtc.AddMinutes(60))
+                    {
+                        isAvailable = false;
+                        availableCount = 0;
+                    }
+                    else
+                    {
+                        int overlapCount = 0;
+                        bool isLicensePlateViolated = false;
+
+                        foreach (var b in activeBookings)
+                        {
+                            var bStartUtc = b.ScheduledTime;
+                            var bEndUtc = bStartUtc.AddMinutes(b.Duration + 5);
+
+                            // Overlap
+                            if (slotUtc >= bStartUtc && slotUtc < bEndUtc)
+                            {
+                                overlapCount++;
+                            }
+
+                            // BR-28: Same license plate < 120 mins
+                            if (!string.IsNullOrEmpty(licensePlate) && !string.IsNullOrEmpty(b.LicensePlate))
+                            {
+                                if (b.LicensePlate.Equals(licensePlate, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    if (Math.Abs((slotUtc - bStartUtc).TotalMinutes) < 120)
+                                    {
+                                        isLicensePlateViolated = true;
+                                    }
+                                }
+                            }
+                        }
+
+                        availableCount = Math.Max(0, maxParallelSlots - overlapCount);
+                        if (overlapCount >= maxParallelSlots || isLicensePlateViolated)
+                        {
+                            isAvailable = false;
+                            availableCount = 0;
+                        }
+                    }
+
+                    response.Slots.Add(new TimeSlotDto
+                    {
+                        Time = slotLocal.ToString("HH:mm"),
+                        IsAvailable = isAvailable,
+                        AvailableCount = availableCount
+                    });
+                }
+
+                result.Add(response);
+            }
+
+            return result;
         }
     }
 }

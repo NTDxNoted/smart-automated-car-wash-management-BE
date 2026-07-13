@@ -44,20 +44,17 @@ namespace AutoWashPro.API.Controllers
                 if (message.Contains("VEHICLE_BUFFER_VIOLATION"))
                     return StatusCode(422, new { error = "VEHICLE_BUFFER_VIOLATION", message, detail });
 
-                if (message.Contains("ADVANCE_NOTICE_VIOLATION") || message.Contains("ADVANCE_NOTICE_TOO_SHORT"))
+                if (message.Contains("ADVANCE_NOTICE_VIOLATION"))
                     return StatusCode(422, new { error = "ADVANCE_NOTICE_VIOLATION", message, detail });
 
                 if (message.Contains("BOOKING_WINDOW_VIOLATION"))
                     return StatusCode(422, new { error = "BOOKING_WINDOW_VIOLATION", message, detail });
 
-                if (message.Contains("SUSPENDED_ACCOUNT") || message.Contains("ACCOUNT_SUSPENDED"))
+                if (message.Contains("SUSPENDED_ACCOUNT"))
                     return StatusCode(422, new { error = "SUSPENDED_ACCOUNT", message, detail });
 
                 if (message.Contains("VEHICLE_REQUIRED"))
                     return BadRequest(new { error = "VEHICLE_REQUIRED", message, detail });
-
-                if (message.Contains("NOT_FOUND"))
-                    return NotFound(new { error = "NOT_FOUND", message, detail });
 
                 return BadRequest(new
                 {
@@ -69,7 +66,6 @@ namespace AutoWashPro.API.Controllers
         }
 
         // 2. GET /api/Bookings
-
         [HttpGet]
         public async Task<IActionResult> GetBookings(
             [FromQuery] string? status,

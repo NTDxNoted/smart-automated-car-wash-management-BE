@@ -17,16 +17,48 @@ namespace AutoWashPro.API.Controllers.Admin
     }
 
     [HttpGet("overview")]
-    public async Task<IActionResult> GetOverview()
+    public async Task<IActionResult> GetOverview([FromQuery] string? filterType, [FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate)
     {
       try
       {
-        var result = await _reportService.GetOverviewReportAsync();
+        if (startDate.HasValue && endDate.HasValue)
+        {
+          if (startDate.Value > endDate.Value)
+            return BadRequest(new { error = "INVALID_DATE_RANGE", message = "startDate must be before or equal to endDate." });
+
+          if ((endDate.Value.Date - startDate.Value.Date).Days > 365)
+            return BadRequest(new { error = "DATE_RANGE_TOO_WIDE", message = "Date range cannot exceed 366 days." });
+        }
+
+        var result = await _reportService.GetOverviewReportAsync(filterType, startDate, endDate);
         return Ok(result);
       }
       catch (Exception ex)
       {
         return BadRequest(new { error = "GET_OVERVIEW_FAILED", message = ex.Message });
+      }
+    }
+
+    [HttpGet("popular-services")]
+    public async Task<IActionResult> GetPopularServices([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate)
+    {
+      try
+      {
+        if (startDate.HasValue && endDate.HasValue)
+        {
+          if (startDate.Value > endDate.Value)
+            return BadRequest(new { error = "INVALID_DATE_RANGE", message = "startDate must be before or equal to endDate." });
+
+          if ((endDate.Value.Date - startDate.Value.Date).Days > 365)
+            return BadRequest(new { error = "DATE_RANGE_TOO_WIDE", message = "Date range cannot exceed 366 days." });
+        }
+
+        var result = await _reportService.GetPopularServicesReportAsync(startDate, endDate);
+        return Ok(result);
+      }
+      catch (Exception ex)
+      {
+        return BadRequest(new { error = "GET_POPULAR_SERVICES_FAILED", message = ex.Message });
       }
     }
 
@@ -89,29 +121,6 @@ namespace AutoWashPro.API.Controllers.Admin
       catch (Exception ex)
       {
         return BadRequest(new { error = "GET_PEAK_OCCUPANCY_FAILED", message = ex.Message });
-      }
-    }
-
-    [HttpGet("popular-services")]
-    public async Task<IActionResult> GetPopularServices([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate)
-    {
-      try
-      {
-        var effectiveStartDate = startDate ?? new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-        var effectiveEndDate = endDate ?? DateTime.UtcNow.Date;
-
-        if (effectiveStartDate > effectiveEndDate)
-          return BadRequest(new { error = "INVALID_DATE_RANGE", message = "startDate must be before or equal to endDate." });
-
-        if ((effectiveEndDate.Date - effectiveStartDate.Date).Days > 365)
-          return BadRequest(new { error = "DATE_RANGE_TOO_WIDE", message = "Date range cannot exceed 366 days." });
-
-        var result = await _reportService.GetPopularServicesReportAsync(effectiveStartDate, effectiveEndDate);
-        return Ok(new { startDate = effectiveStartDate.ToString("yyyy-MM-dd"), endDate = effectiveEndDate.ToString("yyyy-MM-dd"), data = result });
-      }
-      catch (Exception ex)
-      {
-        return BadRequest(new { error = "GET_POPULAR_SERVICES_FAILED", message = ex.Message });
       }
     }
 

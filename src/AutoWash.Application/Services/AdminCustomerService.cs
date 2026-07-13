@@ -86,6 +86,12 @@ namespace AutoWash.Application.Services
             if (customer == null)
                 throw new Exception("NOT_FOUND: Không tìm thấy hồ sơ khách hàng.");
 
+            var bookings = customer.Bookings.OrderByDescending(b => b.ScheduledTime).ToList();
+            var serviceIds = bookings.Select(b => b.ServiceID).Distinct().ToList();
+            var services = await _context.Services
+                .Where(s => serviceIds.Contains(s.ServiceID))
+                .ToDictionaryAsync(s => s.ServiceID, s => s.ServiceName);
+
             var detailDto = new CustomerDetailAdminResponseDto
             {
                 CustomerId = customer.CustomerID,
@@ -97,17 +103,20 @@ namespace AutoWash.Application.Services
                 SuspendedUntil = customer.SuspendedUntil,
                 CreatedAt = customer.CreatedAt,
 
-                BookingHistory = customer.Bookings
-                    .OrderByDescending(b => b.ScheduledTime)
-                    .Select(b => new BookingResponseDto
+                BookingHistory = bookings.Select(b => new BookingResponseDto
+                {
+                    BookingId = b.BookingID,
+                    LicensePlate = b.LicensePlate,
+                    ScheduledTime = b.ScheduledTime,
+                    Status = b.Status.ToString(),
+                    FinalAmount = b.FinalAmount,
+                    PointsEarned = b.PointsEarned,
+                    Service = new ServiceResponse
                     {
-                        BookingId = b.BookingID,
-                        LicensePlate = b.LicensePlate,
-                        ScheduledTime = b.ScheduledTime,
-                        Status = b.Status.ToString(),
-                        FinalAmount = b.FinalAmount,
-                        PointsEarned = b.PointsEarned
-                    }).ToList()
+                        ServiceId = b.ServiceID,
+                        ServiceName = services.TryGetValue(b.ServiceID, out var name) ? name : "Dịch vụ không xác định"
+                    }
+                }).ToList()
             };
 
             return detailDto;
@@ -120,8 +129,6 @@ namespace AutoWash.Application.Services
 
             if (customer == null)
                 throw new Exception("NOT_FOUND: Không tìm thấy khách hàng để thao tác.");
-
-            customer.IsLocked = !customer.IsLocked;
 
             customer.IsLocked = !customer.IsLocked;
             await _context.SaveChangesAsync();

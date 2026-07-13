@@ -174,14 +174,21 @@ namespace AutoWash.Application.Services
             var booking = await _context.Bookings.FindAsync(id);
             if (booking == null) throw new Exception("BOOKING_NOT_FOUND");
 
+            if (booking.CheckInTime == null)
+            {
+                throw new InvalidOperationException("BOOKING_NOT_STARTED: Không thể dừng khẩn cấp đơn chưa bắt đầu rửa xe (chưa check-in).");
+            }
+
+            if (booking.Status != BookingStatus.Pending)
+            {
+                throw new InvalidOperationException("INVALID_STATUS: Đơn hàng đã kết thúc (hoàn thành, thất bại hoặc hủy).");
+            }
+
             _logger.LogError("EMERGENCY STOP TRIGGERED for Booking {BookingID}. Reason: {Reason}", id, request.Reason);
             
-            if (booking.Status == BookingStatus.Pending)
-            {
-                booking.Status = BookingStatus.Failed;
-                booking.CompletedAt = DateTime.UtcNow;
-                await _context.SaveChangesAsync();
-            }
+            booking.Status = BookingStatus.Failed;
+            booking.CompletedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
 
             return new
             {
