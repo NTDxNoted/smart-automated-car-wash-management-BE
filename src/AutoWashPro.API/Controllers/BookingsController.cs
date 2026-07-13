@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
+using AutoWash.Application.DTOs;
 using AutoWash.Application.Interfaces;
 using AutoWash.Application.DTOs;
 
