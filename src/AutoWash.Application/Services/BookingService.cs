@@ -409,63 +409,14 @@ namespace AutoWash.Application.Services
             int page,
             int pageSize)
         {
-            if (request.ServiceId <= 0)
-                throw new Exception("SERVICE_REQUIRED: Vui lòng chọn dịch vụ.");
-
-            if (request.ScheduledTime <= DateTime.UtcNow.AddMinutes(60))
-                throw new Exception("ADVANCE_NOTICE_VIOLATION: Phải đặt lịch trước ít nhất 60 phút.");
-
-            Customer? customer = null;
-            Tier? tier = null;
-            LoyaltyAccount? loyalty = null;
-            Vehicle? selectedVehicle = null;
-            int? effectiveCustomerId = customerId;
-
-            string phone;
-            string licensePlate;
+            var query = _context.Bookings.AsQueryable();
 
             if (customerId.HasValue)
-            {
-                customer = await _context.Customers
-                    .FirstOrDefaultAsync(c => c.CustomerID == customerId.Value);
-
-                if (customer == null)
-                    throw new Exception("CUSTOMER_NOT_FOUND: Không tìm thấy khách hàng.");
-
-                if (customer.IsLocked)
-                    throw new Exception("ACCOUNT_LOCKED: Tài khoản đang bị khóa.");
-
-                if (customer.SuspendedUntil.HasValue &&
-                    customer.SuspendedUntil.Value > DateTime.UtcNow)
-                    throw new Exception("SUSPENDED_ACCOUNT: Tài khoản đang bị tạm khóa.");
-
-                tier = await _context.Tiers.FirstOrDefaultAsync(t => t.TierID == customer.TierID);
-                if (tier == null)
-                    throw new Exception("TIER_NOT_FOUND: Không tìm thấy tier của khách hàng.");
-
-                loyalty = await _context.LoyaltyAccounts.FirstOrDefaultAsync(l => l.CustomerID == customer.CustomerID);
-
-                phone = customer.Phone;
-
-                if (!request.VehicleId.HasValue || request.VehicleId.Value <= 0)
-                    throw new Exception("VEHICLE_REQUIRED: Member phải truyền vehicleId.");
-
-                selectedVehicle = await _context.Vehicles
-                    .FirstOrDefaultAsync(v =>
-                        v.VehicleID == request.VehicleId.Value &&
-                        v.CustomerID == customerId.Value);
-
-                if (selectedVehicle == null)
-                    throw new Exception("VEHICLE_NOT_FOUND: Không tìm thấy xe của khách hàng.");
-
-                licensePlate = selectedVehicle.LicensePlate;
-                if (request.ScheduledTime > DateTime.UtcNow.AddDays(tier.BookingWindowDays))
-                    throw new Exception("BOOKING_WINDOW_VIOLATION: Lịch đặt vượt quá khung thời gian theo tier.");
-            }
+                query = query.Where(b => b.CustomerID == customerId.Value);
+            else if (!string.IsNullOrEmpty(guestPhone))
+                query = query.Where(b => b.Phone == guestPhone);
             else
-            {
-                if (string.IsNullOrWhiteSpace(request.Phone))
-                    throw new Exception("PHONE_REQUIRED: Guest phải nhập số điện thoại.");
+                throw new Exception("UNAUTHORIZED: Cần cung cấp ID hoặc SĐT.");
 
             if (!string.IsNullOrEmpty(status) &&
                 Enum.TryParse<BookingStatus>(status, true, out var parsedStatus))
@@ -531,32 +482,11 @@ namespace AutoWash.Application.Services
             return new BookingResponseDto
             {
                 BookingId = booking.BookingID,
-                Phone = booking.Phone,
                 LicensePlate = booking.LicensePlate,
-                Service = new ServiceResponse
-                {
-                    ServiceId = service.ServiceID,
-                    ServiceName = service.ServiceName,
-                    Duration = service.Duration,
-                    Price = service.Price,
-                    ServiceCategory = service.ServiceCategory,
-                    Status = service.Status,
-                    Description = service.Description
-                },
                 ScheduledTime = booking.ScheduledTime,
                 Status = booking.Status.ToString(),
-                Invoice = new InvoiceResponseDto
-                {
-                    BaseAmount = baseAmount,
-                    TierDiscount = tierDiscount,
-                    RewardDiscount = rewardDiscount,
-                    PromotionDiscount = promotionDiscount,
-                    DiscountApplied = discountApplied,
-                    FinalAmount = finalAmount
-                },
                 FinalAmount = booking.FinalAmount,
-                PointsEarned = booking.PointsEarned,
-                CreatedAt = booking.CreatedAt
+                PointsEarned = booking.PointsEarned
             };
         }
 
@@ -573,16 +503,18 @@ namespace AutoWash.Application.Services
                 throw new Exception("NOT_FOUND: Không tìm thấy lịch đặt.");
 
             if (customerId.HasValue)
-                query = query.Where(b => b.CustomerID == customerId.Value);
-            else if (!string.IsNullOrEmpty(guestPhone))
-                query = query.Where(b => b.Phone == guestPhone);
-            else
-                throw new Exception("UNAUTHORIZED: Cần cung cấp ID hoặc SĐT.");
-
-            if (!string.IsNullOrEmpty(status) &&
-                Enum.TryParse<BookingStatus>(status, true, out var parsedStatus))
             {
-                query = query.Where(b => b.Status == parsedStatus);
+                if (booking.CustomerID != customerId.Value)
+                    throw new Exception("UNAUTHORIZED: Bạn không có quyền hủy lịch này.");
+            }
+            else if (!string.IsNullOrEmpty(guestPhone))
+            {
+                if (booking.Phone != guestPhone)
+                    throw new Exception("UNAUTHORIZED: Số điện thoại không khớp với lịch đặt.");
+            }
+            else
+            {
+                throw new Exception("UNAUTHORIZED: Cần thông tin đăng nhập hoặc SĐT.");
             }
 
             if (booking.Status != BookingStatus.Pending)
@@ -616,7 +548,7 @@ namespace AutoWash.Application.Services
 
             await _context.SaveChangesAsync();
 
-            return new PagedResponse<BookingResponseDto>
+            return new CancelBookingResponseDto
             {
                 BookingId = booking.BookingID,
                 Status = "Cancelled",
@@ -635,11 +567,10 @@ namespace AutoWash.Application.Services
                 throw new Exception("NOT_FOUND: Không tìm thấy lịch đặt.");
 
             if (booking.Status != BookingStatus.Pending)
-                throw new Exception("INVALID_STATUS: Chỉ có thể hủy lịch đang chờ.");
+                throw new Exception("INVALID_STATUS: Chỉ có thể hoàn thành booking ở trạng thái Pending.");
 
-            booking.Status = BookingStatus.Cancelled;
+            booking.Status = BookingStatus.Completed;
             booking.CompletedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
 
             if (booking.CustomerID > 0)
             {
@@ -667,8 +598,6 @@ namespace AutoWash.Application.Services
                 }
             }
 
-            booking.Status = BookingStatus.Completed;
-            booking.CompletedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
             return new BookingResponseDto
@@ -678,8 +607,7 @@ namespace AutoWash.Application.Services
                 ScheduledTime = booking.ScheduledTime,
                 Status = booking.Status.ToString(),
                 FinalAmount = booking.FinalAmount,
-                PointsEarned = booking.PointsEarned,
-                CreatedAt = booking.CreatedAt
+                PointsEarned = booking.PointsEarned
             };
         }
 
