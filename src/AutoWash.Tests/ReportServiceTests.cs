@@ -40,9 +40,9 @@ namespace AutoWash.Tests.Application.Services
       );
       await db.SaveChangesAsync();
 
-      var result = await service.GetOverviewReportAsync();
+      var result = await service.GetOverviewReportAsync("month", null, null);
 
-      Assert.Equal(DateTime.UtcNow.ToString("yyyy-MM"), result.Period);
+      Assert.Equal("month", result.Period);
       Assert.Equal(5, result.TotalBookings);
       Assert.Equal(2, result.CompletedBookings);
       Assert.Equal(1, result.FailedBookings);
