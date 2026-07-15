@@ -18,6 +18,14 @@ namespace AutoWashPro.API.Middleware
 
         public async Task InvokeAsync(HttpContext context)
         {
+            // CORS preflight requests carry no Authorization header by design;
+            // let them pass through so the browser gets a successful preflight response.
+            if (HttpMethods.IsOptions(context.Request.Method))
+            {
+                await _next(context);
+                return;
+            }
+
             var path = context.Request.Path.Value ?? "";
 
             // Intercept admin endpoints except the login endpoint
