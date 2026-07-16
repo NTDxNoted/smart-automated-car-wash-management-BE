@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using AutoWash.Application.DTOs.Admin;
 using AutoWash.Application.Interfaces;
+using AutoWash.Domain.Entities;
 using AutoWash.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -117,14 +118,19 @@ namespace AutoWash.Application.Services
             var previousStatus = booking.Status;
             booking.Status = newStatus;
 
-            if (newStatus == BookingStatus.Completed || newStatus == BookingStatus.Failed || newStatus == BookingStatus.Cancelled)
+            if (newStatus == BookingStatus.Completed || newStatus == BookingStatus.Failed || newStatus == BookingStatus.Cancelled || newStatus == BookingStatus.NoShow)
             {
                 booking.CompletedAt = DateTime.UtcNow;
             }
 
+            if (newStatus == BookingStatus.NoShow)
+            {
+                await ApplyNoShowPenaltyAsync(booking);
+            }
+
             await _context.SaveChangesAsync();
             _logger.LogInformation("Booking {BookingID} status updated from {OldStatus} to {NewStatus}", id, previousStatus, newStatus);
-            
+
             // BR-33: Kích hoạt Notification (Mô phỏng qua Log) ngay sau khi thay đổi trạng thái
             _logger.LogInformation("NOTIFICATION TRIGGERED (BR-33): Đã gửi tin nhắn đến SĐT {Phone} - Trạng thái đơn đặt lịch của bạn đã được cập nhật thành: {NewStatus}.", booking.Phone, newStatus);
 
@@ -169,6 +175,41 @@ namespace AutoWash.Application.Services
             return new { bookingId = booking.BookingID, checkInTime = booking.CheckInTime, message = "Check-in thành công" };
         }
 
+        private async Task ApplyNoShowPenaltyAsync(Booking booking)
+        {
+            if (booking.CustomerID <= 0 && string.IsNullOrWhiteSpace(booking.Phone))
+            {
+                return;
+            }
+
+            var customer = await _context.Customers.FirstOrDefaultAsync(c =>
+                (booking.CustomerID > 0 && c.CustomerID == booking.CustomerID) ||
+                (!string.IsNullOrWhiteSpace(booking.Phone) && c.Phone == booking.Phone));
+
+            if (customer == null)
+            {
+                return;
+            }
+
+            var now = DateTime.UtcNow;
+            var cutoff = now.AddDays(-30);
+            var noShowCount = 1 + await _context.Bookings.CountAsync(b =>
+                b.Status == BookingStatus.NoShow &&
+                ((b.CompletedAt ?? b.CreatedAt) >= cutoff) &&
+                ((b.CustomerID > 0 && b.CustomerID == customer.CustomerID) ||
+                 (!string.IsNullOrWhiteSpace(b.Phone) && b.Phone == customer.Phone)));
+
+            if (noShowCount >= 3)
+            {
+                customer.IsLocked = true;
+                customer.SuspendedUntil = now.AddDays(15);
+                _logger.LogWarning(
+                    "Customer {CustomerID} suspended for {NoShowCount} no-shows within 30 days.",
+                    customer.CustomerID,
+                    noShowCount);
+            }
+        }
+
         public async Task<object> EmergencyStopAsync(int id, EmergencyStopRequest request)
         {
             var booking = await _context.Bookings.FindAsync(id);
@@ -185,7 +226,7 @@ namespace AutoWash.Application.Services
             }
 
             _logger.LogError("EMERGENCY STOP TRIGGERED for Booking {BookingID}. Reason: {Reason}", id, request.Reason);
-            
+
             booking.Status = BookingStatus.Failed;
             booking.CompletedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
