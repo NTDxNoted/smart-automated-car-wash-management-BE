@@ -46,20 +46,46 @@ namespace AutoWash.Infrastructure.Jobs
 
                     if (overdueBookings.Any())
                     {
-                        var affectedCustomerIds = overdueBookings
-                            .Where(b => b.CustomerID > 0)
-                            .Select(b => b.CustomerID)
-                            .Distinct()
-                            .ToList();
-
                         foreach (var booking in overdueBookings)
                         {
-                            booking.Status = BookingStatus.Cancelled;
+                            booking.Status = BookingStatus.NoShow;
                             booking.CompletedAt = DateTime.UtcNow;
 
                             _logger.LogWarning(
-                                "Booking {BookingID} automatically cancelled because customer did not show up.",
+                                "Booking {BookingID} automatically marked as NoShow because customer did not show up.",
                                 booking.BookingID);
+                        }
+
+                        await dbContext.SaveChangesAsync(stoppingToken);
+
+                        foreach (var booking in overdueBookings)
+                        {
+                            var customer = await dbContext.Customers.FirstOrDefaultAsync(c =>
+                                (booking.CustomerID > 0 && c.CustomerID == booking.CustomerID) ||
+                                (!string.IsNullOrWhiteSpace(booking.Phone) && c.Phone == booking.Phone));
+
+                            if (customer == null)
+                            {
+                                continue;
+                            }
+
+                            var now = DateTime.UtcNow;
+                            var cutoff = now.AddDays(-30);
+                            var noShowCount = 1 + await dbContext.Bookings.CountAsync(b =>
+                                b.Status == BookingStatus.NoShow &&
+                                ((b.CompletedAt ?? b.CreatedAt) >= cutoff) &&
+                                ((b.CustomerID > 0 && b.CustomerID == customer.CustomerID) ||
+                                 (!string.IsNullOrWhiteSpace(b.Phone) && b.Phone == customer.Phone)));
+
+                            if (noShowCount >= 3)
+                            {
+                                customer.IsLocked = true;
+                                customer.SuspendedUntil = now.AddDays(15);
+                                _logger.LogWarning(
+                                    "Customer {CustomerID} suspended for {NoShowCount} no-shows within 30 days.",
+                                    customer.CustomerID,
+                                    noShowCount);
+                            }
                         }
 
                         await dbContext.SaveChangesAsync(stoppingToken);

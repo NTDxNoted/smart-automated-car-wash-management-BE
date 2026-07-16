@@ -59,6 +59,7 @@ namespace AutoWash.Application.Services
                     FullName = c.FullName,
                     Phone = c.Phone,
                     Tier = c.LoyaltyAccount != null ? DetermineTier(c.LoyaltyAccount.TotalPoints) : "Member",
+                    Points = c.LoyaltyAccount?.TotalPoints ?? 0,
                     TotalSpending = c.TotalSpending,
                     IsLocked = c.IsLocked,
                     SuspendedUntil = c.SuspendedUntil,
@@ -98,6 +99,7 @@ namespace AutoWash.Application.Services
                 FullName = customer.FullName,
                 Phone = customer.Phone,
                 Tier = customer.LoyaltyAccount != null ? DetermineTier(customer.LoyaltyAccount.TotalPoints) : "Member",
+                Points = customer.LoyaltyAccount?.TotalPoints ?? 0,
                 TotalSpending = customer.TotalSpending,
                 IsLocked = customer.IsLocked,
                 SuspendedUntil = customer.SuspendedUntil,
@@ -133,7 +135,7 @@ namespace AutoWash.Application.Services
             customer.IsLocked = !customer.IsLocked;
             await _context.SaveChangesAsync();
 
-            
+
 
             return new LockCustomerResponseDto
             {
