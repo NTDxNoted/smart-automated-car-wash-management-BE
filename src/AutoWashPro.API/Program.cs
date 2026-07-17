@@ -9,6 +9,7 @@ using AutoWash.Application.Services;
 using AutoWash.Infrastructure.Repositories;
 using AutoWash.Infrastructure.Jobs;
 using AutoWashPro.API.Middleware;
+using AutoWashPro.API.Hubs;
 
 
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
@@ -56,7 +57,28 @@ builder.Services.AddAuthentication(options =>
         ValidateLifetime = true,
         ClockSkew = TimeSpan.Zero
     };
+
+    // SignalR: trình duyệt không set được header Authorization tùy ý lúc bắt tay WebSocket,
+    // nên client gửi token qua query string "access_token" thay (xem signalrService.js bên FE).
+    // Chỉ áp dụng cho đúng path của hub, các request API bình thường vẫn dùng header như cũ.
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+            {
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
 });
+
+// SignalR: đẩy thông báo real-time cho Admin, thay cho polling 5 giây ở FE.
+builder.Services.AddSignalR();
+builder.Services.AddScoped<IAdminNotifier, SignalRAdminNotifier>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAdminAuthService, AdminAuthService>();
@@ -122,6 +144,7 @@ app.UseMiddleware<RoleAuthorizationMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHub<AdminNotificationHub>("/hubs/admin-notifications");
 // Nút test kết nối Database
 app.MapGet("/api/test-db", async (ApplicationDbContext dbContext) =>
 {

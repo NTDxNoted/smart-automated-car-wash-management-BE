@@ -19,12 +19,13 @@ namespace AutoWash.Application.Services
         private readonly ITierService _tierService;
         private readonly IPointService? _pointService;
         private readonly BookingSettings _bookingSettings;
+        private readonly IAdminNotifier? _adminNotifier;
 
         public BookingService(
             IApplicationDbContext context,
             ILogger<BookingService> logger,
             ITierService tierService)
-            : this(context, logger, tierService, null, Microsoft.Extensions.Options.Options.Create(new BookingSettings()))
+            : this(context, logger, tierService, null, Microsoft.Extensions.Options.Options.Create(new BookingSettings()), null)
         {
         }
 
@@ -33,7 +34,7 @@ namespace AutoWash.Application.Services
             ILogger<BookingService> logger,
             ITierService tierService,
             IPointService? pointService)
-            : this(context, logger, tierService, pointService, Microsoft.Extensions.Options.Options.Create(new BookingSettings()))
+            : this(context, logger, tierService, pointService, Microsoft.Extensions.Options.Options.Create(new BookingSettings()), null)
         {
         }
 
@@ -42,22 +43,27 @@ namespace AutoWash.Application.Services
             ILogger<BookingService> logger,
             ITierService tierService,
             IOptions<BookingSettings> bookingSettings)
-            : this(context, logger, tierService, null, bookingSettings)
+            : this(context, logger, tierService, null, bookingSettings, null)
         {
         }
 
+        // Constructor thật dùng lúc runtime (DI resolve) — IAdminNotifier để null (không truyền)
+        // vẫn chạy bình thường, chỉ là không đẩy real-time notification (dùng cho unit test cũ
+        // không quan tâm tới SignalR, xem BookingServiceTests.cs).
         public BookingService(
             IApplicationDbContext context,
             ILogger<BookingService> logger,
             ITierService tierService,
             IPointService? pointService,
-            IOptions<BookingSettings> bookingSettings)
+            IOptions<BookingSettings> bookingSettings,
+            IAdminNotifier? adminNotifier)
         {
             _context = context;
             _logger = logger;
             _tierService = tierService;
             _pointService = pointService;
             _bookingSettings = bookingSettings.Value;
+            _adminNotifier = adminNotifier;
         }
 
         // POST /api/Bookings
@@ -368,6 +374,12 @@ namespace AutoWash.Application.Services
 
             _logger.LogInformation("[BR-33] Booking created BookingID={BookingId}, CustomerID={CustomerId}, Amount={Amount}",
                 booking.BookingID, customerId ?? 0, booking.FinalAmount);
+
+            // Đẩy real-time cho Admin đang online — thay cho việc FE phải polling mỗi 5 giây để phát hiện booking mới.
+            if (_adminNotifier != null)
+            {
+                await _adminNotifier.NotifyNewBookingAsync(booking.BookingID, customer?.FullName ?? phone, licensePlate, service.ServiceName);
+            }
 
             return new BookingResponseDto
             {

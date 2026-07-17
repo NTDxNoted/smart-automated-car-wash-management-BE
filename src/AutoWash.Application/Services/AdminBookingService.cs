@@ -15,11 +15,14 @@ namespace AutoWash.Application.Services
     {
         private readonly IApplicationDbContext _context;
         private readonly ILogger<AdminBookingService> _logger;
+        private readonly IAdminNotifier? _adminNotifier;
 
-        public AdminBookingService(IApplicationDbContext context, ILogger<AdminBookingService> logger)
+        // adminNotifier có default null để các unit test cũ (chỉ truyền context + logger) không phải sửa.
+        public AdminBookingService(IApplicationDbContext context, ILogger<AdminBookingService> logger, IAdminNotifier? adminNotifier = null)
         {
             _context = context;
             _logger = logger;
+            _adminNotifier = adminNotifier;
         }
 
         public async Task<IEnumerable<AdminBookingListResponse>> GetAllBookingsAsync(string? status, string? date, string? phone, string? plate)
@@ -134,6 +137,15 @@ namespace AutoWash.Application.Services
             // BR-33: Kích hoạt Notification (Mô phỏng qua Log) ngay sau khi thay đổi trạng thái
             _logger.LogInformation("NOTIFICATION TRIGGERED (BR-33): Đã gửi tin nhắn đến SĐT {Phone} - Trạng thái đơn đặt lịch của bạn đã được cập nhật thành: {NewStatus}.", booking.Phone, newStatus);
 
+            // Đẩy real-time cho Admin đang online, thay cho FE phải polling để phát hiện đổi trạng thái.
+            if (_adminNotifier != null)
+            {
+                var customerName = booking.CustomerID > 0
+                    ? (await _context.Customers.FindAsync(booking.CustomerID))?.FullName ?? booking.Phone
+                    : booking.Phone;
+                await _adminNotifier.NotifyBookingStatusChangedAsync(id, customerName, booking.LicensePlate, previousStatus.ToString(), newStatus.ToString());
+            }
+
             return new
             {
                 bookingId = booking.BookingID,
@@ -230,6 +242,12 @@ namespace AutoWash.Application.Services
             booking.Status = BookingStatus.Failed;
             booking.CompletedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
+
+            if (_adminNotifier != null)
+            {
+                var customer = booking.CustomerID > 0 ? await _context.Customers.FindAsync(booking.CustomerID) : null;
+                await _adminNotifier.NotifyBookingStatusChangedAsync(id, customer?.FullName ?? booking.Phone, booking.LicensePlate, "Pending", "Failed");
+            }
 
             return new
             {

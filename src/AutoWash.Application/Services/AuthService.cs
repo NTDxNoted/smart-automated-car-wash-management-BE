@@ -17,11 +17,14 @@ namespace AutoWash.Application.Services
   {
     private readonly IApplicationDbContext _dbContext;
     private readonly IConfiguration _configuration;
+    private readonly IAdminNotifier? _adminNotifier;
 
-    public AuthService(IApplicationDbContext dbContext, IConfiguration configuration)
+    // adminNotifier default null để các unit test cũ (chỉ truyền dbContext + configuration) không phải sửa.
+    public AuthService(IApplicationDbContext dbContext, IConfiguration configuration, IAdminNotifier? adminNotifier = null)
     {
       _dbContext = dbContext;
       _configuration = configuration;
+      _adminNotifier = adminNotifier;
     }
 
     public async Task<RegisterResponse> RegisterAsync(RegisterRequest request)
@@ -76,6 +79,12 @@ namespace AutoWash.Application.Services
 
       _dbContext.LoyaltyAccounts.Add(loyaltyAccount);
       await _dbContext.SaveChangesAsync();
+
+      // Đẩy real-time cho Admin đang online — thay cho FE phải polling để phát hiện khách mới đăng ký.
+      if (_adminNotifier != null)
+      {
+        await _adminNotifier.NotifyNewCustomerAsync(customer.CustomerID, customer.FullName, customer.Phone);
+      }
 
       return new RegisterResponse
       {
