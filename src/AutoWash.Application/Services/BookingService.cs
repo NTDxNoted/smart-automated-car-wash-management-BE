@@ -106,19 +106,47 @@ namespace AutoWash.Application.Services
                 loyalty = await _context.LoyaltyAccounts.FirstOrDefaultAsync(l => l.CustomerID == customer.CustomerID);
 
                 phone = customer.Phone;
-
-                if (!request.VehicleId.HasValue || request.VehicleId.Value <= 0)
-                    throw new Exception("VEHICLE_REQUIRED: Member phải truyền vehicleId.");
-
-                selectedVehicle = await _context.Vehicles
-                    .FirstOrDefaultAsync(v =>
-                        v.VehicleID == request.VehicleId.Value &&
-                        v.CustomerID == customerId.Value);
-
-                if (selectedVehicle == null)
-                    throw new Exception("VEHICLE_NOT_FOUND: Không tìm thấy xe của khách hàng.");
-
-                licensePlate = selectedVehicle.LicensePlate;
+ 
+                if (request.VehicleId.HasValue && request.VehicleId.Value > 0)
+                {
+                    selectedVehicle = await _context.Vehicles
+                        .FirstOrDefaultAsync(v =>
+                            v.VehicleID == request.VehicleId.Value &&
+                            v.CustomerID == customerId.Value);
+ 
+                    if (selectedVehicle == null)
+                        throw new Exception("VEHICLE_NOT_FOUND: Không tìm thấy xe của khách hàng.");
+ 
+                    licensePlate = selectedVehicle.LicensePlate;
+                }
+                else if (!string.IsNullOrWhiteSpace(request.LicensePlate))
+                {
+                    var cleanPlate = request.LicensePlate.Trim().ToUpper();
+                    selectedVehicle = await _context.Vehicles
+                        .FirstOrDefaultAsync(v =>
+                            v.CustomerID == customerId.Value &&
+                            v.LicensePlate == cleanPlate);
+ 
+                    if (selectedVehicle == null)
+                    {
+                        selectedVehicle = new Vehicle
+                        {
+                            CustomerID = customerId.Value,
+                            LicensePlate = cleanPlate,
+                            IsActive = true,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        _context.Vehicles.Add(selectedVehicle);
+                        await _context.SaveChangesAsync();
+                    }
+ 
+                    licensePlate = selectedVehicle.LicensePlate;
+                }
+                else
+                {
+                    throw new Exception("VEHICLE_REQUIRED: Vui lòng chọn xe hoặc nhập biển số xe.");
+                }
+ 
                 if (request.ScheduledTime > DateTime.UtcNow.AddDays(tier.BookingWindowDays))
                     throw new Exception("BOOKING_WINDOW_VIOLATION: Lịch đặt vượt quá khung thời gian theo tier.");
             }
@@ -701,11 +729,11 @@ namespace AutoWash.Application.Services
 
                         foreach (var b in activeBookings)
                         {
-                            var bStartUtc = b.ScheduledTime;
-                            var bEndUtc = bStartUtc.AddMinutes(b.Duration + 5);
+                            var bStartLocal = b.ScheduledTime;
+                            var bEndLocal = bStartLocal.AddMinutes(b.Duration + 5);
 
                             // Overlap
-                            if (slotUtc >= bStartUtc && slotUtc < bEndUtc)
+                            if (slotLocal >= bStartLocal && slotLocal < bEndLocal)
                             {
                                 overlapCount++;
                             }
@@ -715,7 +743,7 @@ namespace AutoWash.Application.Services
                             {
                                 if (b.LicensePlate.Equals(licensePlate, StringComparison.OrdinalIgnoreCase))
                                 {
-                                    if (Math.Abs((slotUtc - bStartUtc).TotalMinutes) < 120)
+                                    if (Math.Abs((slotLocal - bStartLocal).TotalMinutes) < 120)
                                     {
                                         isLicensePlateViolated = true;
                                     }
