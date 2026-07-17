@@ -13,15 +13,18 @@ namespace AutoWash.Application.Services
         private readonly IApplicationDbContext _context;
         private readonly IPointService _pointService;
         private readonly ITierService _tierService;
+        private readonly IAdminNotifier? _adminNotifier;
 
         public PaymentService(
             IApplicationDbContext context,
             IPointService pointService,
-            ITierService tierService)
+            ITierService tierService,
+            IAdminNotifier? adminNotifier = null)
         {
             _context = context;
             _pointService = pointService;
             _tierService = tierService;
+            _adminNotifier = adminNotifier;
         }
 
         public async Task<PaymentResponse> RecordPaymentAsync(int bookingId, RecordPaymentRequest request)
@@ -89,6 +92,13 @@ namespace AutoWash.Application.Services
                     }
 
                     await transaction.CommitAsync();
+
+                    // Đẩy real-time cho Admin đang online — thanh toán xong nghĩa là booking chuyển sang Completed.
+                    if (_adminNotifier != null)
+                    {
+                        await _adminNotifier.NotifyBookingStatusChangedAsync(
+                            booking.BookingID, customer?.FullName ?? booking.Phone, booking.LicensePlate, "Pending", "Completed");
+                    }
 
                     int totalPointsAfter = 0;
                     string tierAfter = "Member";
