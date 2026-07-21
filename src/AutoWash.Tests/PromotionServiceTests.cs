@@ -280,5 +280,136 @@ namespace AutoWash.Tests.Application.Services
                 () => service.CreatePromotionAsync(request));
             Assert.Equal("PROMO_CODE_EXISTS", exception.Message);
         }
+
+        [Fact]
+        public async Task GetPromotionsAsync_ShouldReturnAllPromotionsNewestFirst()
+        {
+            var dbContext = CreateDbContext();
+            dbContext.Promotions.Add(new Promotion { Title = "Old", PromoCode = "OLD", DiscountType = "Fixed_Amount", DiscountValue = 10000m, StartDate = DateTime.UtcNow, EndDate = DateTime.UtcNow.AddDays(5) });
+            await dbContext.SaveChangesAsync();
+            dbContext.Promotions.Add(new Promotion { Title = "New", PromoCode = "NEW", DiscountType = "Fixed_Amount", DiscountValue = 10000m, StartDate = DateTime.UtcNow, EndDate = DateTime.UtcNow.AddDays(5) });
+            await dbContext.SaveChangesAsync();
+
+            var service = new PromotionService(dbContext);
+            var result = (await service.GetPromotionsAsync()).ToList();
+
+            Assert.Equal(2, result.Count);
+            Assert.Equal("New", result[0].Title);
+        }
+
+        [Fact]
+        public async Task UpdatePromotionAsync_WithExistingPromo_ShouldPersistChanges()
+        {
+            var dbContext = CreateDbContext();
+            var promo = new Promotion { Title = "Old Title", PromoCode = "CODE1", DiscountType = "Fixed_Amount", DiscountValue = 10000m, StartDate = DateTime.UtcNow, EndDate = DateTime.UtcNow.AddDays(5), IsActive = true, MinOrderValue = 0 };
+            dbContext.Promotions.Add(promo);
+            await dbContext.SaveChangesAsync();
+
+            var service = new PromotionService(dbContext);
+            var result = await service.UpdatePromotionAsync(promo.PromotionID, new UpdatePromoRequest
+            {
+                Title = "New Title",
+                DiscountType = "Percentage",
+                DiscountValue = 20m,
+                StartDate = promo.StartDate,
+                EndDate = promo.EndDate,
+                IsActive = true,
+                MinOrderValue = 0
+            });
+
+            Assert.Equal("New Title", result.Title);
+            Assert.Equal("Percentage", result.DiscountType);
+            Assert.Equal(20m, result.DiscountValue);
+        }
+
+        [Fact]
+        public async Task UpdatePromotionAsync_WithNonExistentPromo_ShouldThrow()
+        {
+            var dbContext = CreateDbContext();
+            var service = new PromotionService(dbContext);
+
+            var ex = await Assert.ThrowsAsync<KeyNotFoundException>(() => service.UpdatePromotionAsync(999, new UpdatePromoRequest
+            {
+                Title = "X",
+                DiscountType = "Fixed_Amount",
+                DiscountValue = 1000m,
+                StartDate = DateTime.UtcNow,
+                EndDate = DateTime.UtcNow.AddDays(1),
+                MinOrderValue = 0
+            }));
+
+            Assert.Equal("PROMO_NOT_FOUND", ex.Message);
+        }
+
+        [Fact]
+        public async Task TogglePromoActiveAsync_ShouldFlipIsActive()
+        {
+            var dbContext = CreateDbContext();
+            var promo = new Promotion { Title = "Promo", PromoCode = "CODE2", DiscountType = "Fixed_Amount", DiscountValue = 10000m, StartDate = DateTime.UtcNow, EndDate = DateTime.UtcNow.AddDays(5), IsActive = true };
+            dbContext.Promotions.Add(promo);
+            await dbContext.SaveChangesAsync();
+
+            var service = new PromotionService(dbContext);
+
+            var afterFirst = await service.TogglePromoActiveAsync(promo.PromotionID);
+            Assert.False(afterFirst.IsActive);
+
+            var afterSecond = await service.TogglePromoActiveAsync(promo.PromotionID);
+            Assert.True(afterSecond.IsActive);
+        }
+
+        [Fact]
+        public async Task TogglePromoActiveAsync_WithNonExistentPromo_ShouldThrow()
+        {
+            var dbContext = CreateDbContext();
+            var service = new PromotionService(dbContext);
+
+            var ex = await Assert.ThrowsAsync<KeyNotFoundException>(() => service.TogglePromoActiveAsync(999));
+
+            Assert.Equal("PROMO_NOT_FOUND", ex.Message);
+        }
+
+        [Fact]
+        public async Task GetPromoUsageAsync_ShouldReturnBookingsThatUsedThePromo()
+        {
+            var dbContext = CreateDbContext();
+            var promo = new Promotion { Title = "Promo", PromoCode = "CODE3", DiscountType = "Fixed_Amount", DiscountValue = 10000m, StartDate = DateTime.UtcNow, EndDate = DateTime.UtcNow.AddDays(5), IsActive = true };
+            dbContext.Promotions.Add(promo);
+            await dbContext.SaveChangesAsync();
+
+            dbContext.Customers.Add(new Customer { CustomerID = 1, FullName = "Test Customer", Phone = "0901234567", Password = "pw", CreatedAt = DateTime.UtcNow });
+            dbContext.Bookings.Add(new Booking
+            {
+                CustomerID = 1,
+                Phone = "0901234567",
+                VehicleID = 1,
+                LicensePlate = "51A-123.45",
+                ServiceID = 1,
+                PromotionID = promo.PromotionID,
+                ScheduledTime = DateTime.UtcNow,
+                Status = BookingStatus.Completed,
+                DiscountApplied = 10000m,
+                CreatedAt = DateTime.UtcNow
+            });
+            await dbContext.SaveChangesAsync();
+
+            var service = new PromotionService(dbContext);
+            var result = (await service.GetPromoUsageAsync(promo.PromotionID)).ToList();
+
+            Assert.Single(result);
+            Assert.Equal("Test Customer", result[0].CustomerName);
+            Assert.Equal(10000m, result[0].DiscountAmountActual);
+        }
+
+        [Fact]
+        public async Task GetPromoUsageAsync_WithNonExistentPromo_ShouldThrow()
+        {
+            var dbContext = CreateDbContext();
+            var service = new PromotionService(dbContext);
+
+            var ex = await Assert.ThrowsAsync<KeyNotFoundException>(() => service.GetPromoUsageAsync(999));
+
+            Assert.Equal("PROMO_NOT_FOUND", ex.Message);
+        }
     }
 }
