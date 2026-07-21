@@ -75,6 +75,12 @@ namespace AutoWash.Application.Services
             if (service == null)
                 throw new Exception("NOT_FOUND: Không tìm thấy dịch vụ.");
 
+            if (request.Price.HasValue && request.Price.Value <= 0)
+                throw new Exception("INVALID_REQUEST: Price phải lớn hơn 0 (BR-35).");
+
+            if (request.Duration.HasValue && request.Duration.Value <= 0)
+                throw new Exception("INVALID_REQUEST: Duration phải lớn hơn 0 (BR-35).");
+
             if (request.ServiceName != null) service.ServiceName = request.ServiceName;
             if (request.ServiceCategory != null) service.ServiceCategory = request.ServiceCategory;
             if (request.Description != null) service.Description = request.Description;
