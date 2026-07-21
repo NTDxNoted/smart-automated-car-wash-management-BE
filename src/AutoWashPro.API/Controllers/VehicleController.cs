@@ -79,6 +79,10 @@ namespace AutoWashPro.API.Controllers
             {
                 return Conflict(new { error = "PLATE_ALREADY_SAVED", message = "Biển số này đã có trong danh sách xe của bạn." });
             }
+            catch (Exception ex) when (ex.Message.StartsWith("INVALID_LICENSE_PLATE"))
+            {
+                return BadRequest(new { error = "INVALID_LICENSE_PLATE", message = ex.Message });
+            }
             catch (Exception ex) when (ex.Message.StartsWith("INVALID_OTP"))
             {
                 return BadRequest(new { error = "INVALID_OTP", message = ex.Message });
@@ -104,6 +108,10 @@ namespace AutoWashPro.API.Controllers
             catch (Exception ex) when (ex.Message.StartsWith("PLATE_ALREADY_SAVED"))
             {
                 return Conflict(new { error = "PLATE_ALREADY_SAVED", message = "Biển số này đã có trong danh sách xe của bạn." });
+            }
+            catch (Exception ex) when (ex.Message.StartsWith("INVALID_LICENSE_PLATE"))
+            {
+                return BadRequest(new { error = "INVALID_LICENSE_PLATE", message = ex.Message });
             }
             catch (Exception ex) when (ex.Message.StartsWith("INVALID_OTP"))
             {

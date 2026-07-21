@@ -56,6 +56,12 @@ namespace AutoWashPro.API.Controllers
                 if (message.Contains("VEHICLE_REQUIRED"))
                     return BadRequest(new { error = "VEHICLE_REQUIRED", message, detail });
 
+                if (message.Contains("INVALID_LICENSE_PLATE"))
+                    return BadRequest(new { error = "INVALID_LICENSE_PLATE", message, detail });
+
+                if (message.Contains("LICENSE_PLATE_REQUIRED"))
+                    return BadRequest(new { error = "LICENSE_PLATE_REQUIRED", message, detail });
+
                 return BadRequest(new
                 {
                     error = "BAD_REQUEST",

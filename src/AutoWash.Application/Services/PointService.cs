@@ -183,8 +183,14 @@ namespace AutoWash.Application.Services
 
             var availablePoints = totalPoints - lockedPoints;
 
+            // BR-Rewards: % tính trên giá gốc dịch vụ; Fixed_Amount giữ nguyên số tiền.
+            decimal rawDiscount = reward.DiscountType == "Percentage"
+                ? Math.Round(baseAmount * (reward.DiscountAmount / 100m), 0)
+                : reward.DiscountAmount;
+
+            // BR-60: điểm thưởng chỉ được thanh toán tối đa 50% giá trị hóa đơn.
             var maxAllowed = Math.Round(baseAmount * 0.5m, 2);
-            var discountApplied = Math.Min(reward.DiscountAmount, maxAllowed);
+            var discountApplied = Math.Min(rawDiscount, maxAllowed);
 
             return new RedeemSimulateResponse
             {
@@ -192,6 +198,7 @@ namespace AutoWash.Application.Services
                 RewardName = reward.RewardName,
                 PointsRequired = reward.PointsRequired,
                 DiscountValue = reward.DiscountAmount,
+                DiscountType = reward.DiscountType,
                 MaxAllowed = maxAllowed,
                 DiscountApplied = discountApplied,
                 FinalAmount = baseAmount - discountApplied,
