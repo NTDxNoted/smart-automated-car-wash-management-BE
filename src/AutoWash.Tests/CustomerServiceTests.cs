@@ -1,8 +1,11 @@
 using AutoWash.Application.DTOs;
+using AutoWash.Application.Interfaces;
 using AutoWash.Application.Services;
 using AutoWash.Domain.Entities;
 using AutoWash.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Moq;
 using Xunit;
 
 namespace AutoWash.Tests.Application.Services
@@ -41,7 +44,7 @@ namespace AutoWash.Tests.Application.Services
       });
       await dbContext.SaveChangesAsync();
 
-      var service = new CustomerService(dbContext);
+      var service = new CustomerService(dbContext, Mock.Of<ITierService>());
 
       var profile = await service.GetProfileAsync(customer.CustomerID);
 
@@ -68,7 +71,7 @@ namespace AutoWash.Tests.Application.Services
       dbContext.Customers.Add(customer);
       await dbContext.SaveChangesAsync();
 
-      var service = new CustomerService(dbContext);
+      var service = new CustomerService(dbContext, Mock.Of<ITierService>());
       var profile = await service.GetProfileAsync(customer.CustomerID);
 
       Assert.Equal("Silver", profile.Tier);
@@ -88,10 +91,38 @@ namespace AutoWash.Tests.Application.Services
       dbContext.Customers.Add(customer);
       await dbContext.SaveChangesAsync();
 
-      var service = new CustomerService(dbContext);
+      var service = new CustomerService(dbContext, Mock.Of<ITierService>());
       var profile = await service.GetProfileAsync(customer.CustomerID);
 
       Assert.Equal("Member", profile.Tier);
+    }
+
+    [Fact]
+    public async Task GetProfileAsync_WithSpendingQualifyingHigherTier_ShouldAutoUpgradeAndReturnNewTier()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Tiers.Add(new Tier { TierID = 1, TierName = "Member", MinSpending = 0, BookingWindowDays = 7, DiscountRate = 0, PriorityScore = 1 });
+      dbContext.Tiers.Add(new Tier { TierID = 2, TierName = "Silver", MinSpending = 1_000_000, BookingWindowDays = 10, DiscountRate = 5, PriorityScore = 2 });
+      var customer = new Customer
+      {
+        FullName = "Should Upgrade",
+        Phone = "0905555555",
+        Password = "hashed",
+        TierID = 1, // vẫn đang Member trong DB dù chi tiêu đã đủ Silver
+        TotalSpending = 1_200_000m,
+        CreatedAt = DateTime.UtcNow
+      };
+      dbContext.Customers.Add(customer);
+      await dbContext.SaveChangesAsync();
+
+      var tierService = new TierService(dbContext, Mock.Of<ILogger<TierService>>());
+      var service = new CustomerService(dbContext, tierService);
+
+      var profile = await service.GetProfileAsync(customer.CustomerID);
+
+      Assert.Equal("Silver", profile.Tier);
+      var persisted = await dbContext.Customers.FirstAsync(c => c.CustomerID == customer.CustomerID);
+      Assert.Equal(2, persisted.TierID);
     }
 
     [Fact]
@@ -108,7 +139,7 @@ namespace AutoWash.Tests.Application.Services
       dbContext.Customers.Add(customer);
       await dbContext.SaveChangesAsync();
 
-      var service = new CustomerService(dbContext);
+      var service = new CustomerService(dbContext, Mock.Of<ITierService>());
 
       var profile = await service.GetProfileAsync(customer.CustomerID);
 
@@ -119,7 +150,7 @@ namespace AutoWash.Tests.Application.Services
     public async Task GetProfileAsync_WithNonExistentCustomer_ShouldThrow()
     {
       using var dbContext = CreateDbContext();
-      var service = new CustomerService(dbContext);
+      var service = new CustomerService(dbContext, Mock.Of<ITierService>());
 
       var ex = await Assert.ThrowsAsync<Exception>(() => service.GetProfileAsync(999));
 
@@ -140,7 +171,7 @@ namespace AutoWash.Tests.Application.Services
       dbContext.Customers.Add(customer);
       await dbContext.SaveChangesAsync();
 
-      var service = new CustomerService(dbContext);
+      var service = new CustomerService(dbContext, Mock.Of<ITierService>());
 
       var updated = await service.UpdateProfileAsync(customer.CustomerID, new UpdateProfileRequest
       {
@@ -167,7 +198,7 @@ namespace AutoWash.Tests.Application.Services
       dbContext.Customers.Add(customer);
       await dbContext.SaveChangesAsync();
 
-      var service = new CustomerService(dbContext);
+      var service = new CustomerService(dbContext, Mock.Of<ITierService>());
 
       var updated = await service.UpdateProfileAsync(customer.CustomerID, new UpdateProfileRequest
       {
@@ -181,7 +212,7 @@ namespace AutoWash.Tests.Application.Services
     public async Task UpdateProfileAsync_WithNonExistentCustomer_ShouldThrow()
     {
       using var dbContext = CreateDbContext();
-      var service = new CustomerService(dbContext);
+      var service = new CustomerService(dbContext, Mock.Of<ITierService>());
 
       var ex = await Assert.ThrowsAsync<Exception>(() => service.UpdateProfileAsync(999, new UpdateProfileRequest { FullName = "X" }));
 
