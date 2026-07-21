@@ -53,6 +53,48 @@ namespace AutoWash.Tests.Application.Services
     }
 
     [Fact]
+    public async Task GetProfileAsync_ShouldResolveTierNameFromTierID()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Tiers.Add(new Tier { TierID = 2, TierName = "Silver", MinSpending = 1_000_000, BookingWindowDays = 10, DiscountRate = 5, PriorityScore = 2 });
+      var customer = new Customer
+      {
+        FullName = "Silver User",
+        Phone = "0903333333",
+        Password = "hashed",
+        TierID = 2,
+        CreatedAt = DateTime.UtcNow
+      };
+      dbContext.Customers.Add(customer);
+      await dbContext.SaveChangesAsync();
+
+      var service = new CustomerService(dbContext);
+      var profile = await service.GetProfileAsync(customer.CustomerID);
+
+      Assert.Equal("Silver", profile.Tier);
+    }
+
+    [Fact]
+    public async Task GetProfileAsync_WithDefaultTierAndNoSeededTiers_ShouldFallbackToMember()
+    {
+      using var dbContext = CreateDbContext();
+      var customer = new Customer
+      {
+        FullName = "New Member",
+        Phone = "0904444444",
+        Password = "hashed",
+        CreatedAt = DateTime.UtcNow
+      };
+      dbContext.Customers.Add(customer);
+      await dbContext.SaveChangesAsync();
+
+      var service = new CustomerService(dbContext);
+      var profile = await service.GetProfileAsync(customer.CustomerID);
+
+      Assert.Equal("Member", profile.Tier);
+    }
+
+    [Fact]
     public async Task GetProfileAsync_WithoutLoyaltyAccount_ShouldReturnZeroPoints()
     {
       using var dbContext = CreateDbContext();
