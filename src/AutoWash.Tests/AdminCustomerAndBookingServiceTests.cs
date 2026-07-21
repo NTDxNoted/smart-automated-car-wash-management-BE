@@ -1,5 +1,6 @@
 using AutoWash.Application.DTOs;
 using AutoWash.Application.DTOs.Admin;
+using AutoWash.Application.Interfaces;
 using AutoWash.Application.Services;
 using AutoWash.Domain.Entities;
 using AutoWash.Domain.Enums;
@@ -120,6 +121,52 @@ namespace AutoWash.Tests.Application.Services
       Assert.Equal("NoShow", result.GetType().GetProperty("newStatus")?.GetValue(result)?.ToString());
       Assert.NotNull(customer.SuspendedUntil);
       Assert.True(customer.SuspendedUntil > DateTime.UtcNow);
+    }
+
+    [Fact]
+    public async Task UpdateBookingStatusAsync_WhenCompleted_ShouldUpdateSpendingAndTriggerTierAndPoints()
+    {
+      using var dbContext = CreateDbContext();
+
+      var customer = new Customer
+      {
+        CustomerID = 1,
+        FullName = "Test Customer",
+        Phone = "0903333333",
+        Password = "pw",
+        TotalSpending = 100000m,
+        CreatedAt = DateTime.UtcNow
+      };
+      dbContext.Customers.Add(customer);
+
+      dbContext.Bookings.Add(new Booking
+      {
+        BookingID = 1,
+        CustomerID = 1,
+        Phone = "0903333333",
+        ServiceID = 1,
+        LicensePlate = "51A-222.22",
+        ScheduledTime = DateTime.UtcNow.AddMinutes(-10),
+        Status = BookingStatus.Pending,
+        FinalAmount = 250000m,
+        CreatedAt = DateTime.UtcNow
+      });
+
+      await dbContext.SaveChangesAsync();
+
+      var logger = Mock.Of<ILogger<AdminBookingService>>();
+      var tierServiceMock = new Mock<ITierService>();
+      var pointServiceMock = new Mock<IPointService>();
+      var service = new AdminBookingService(dbContext, logger, adminNotifier: null, tierService: tierServiceMock.Object, pointService: pointServiceMock.Object);
+
+      await service.UpdateBookingStatusAsync(1, new UpdateBookingStatusRequest
+      {
+        NewStatus = "Completed"
+      });
+
+      Assert.Equal(350000m, customer.TotalSpending);
+      tierServiceMock.Verify(t => t.EvaluateUpgradeAsync(1), Times.Once);
+      pointServiceMock.Verify(p => p.EarnPointsAsync(1), Times.Once);
     }
   }
 }
