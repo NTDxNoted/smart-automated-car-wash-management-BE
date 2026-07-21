@@ -33,40 +33,38 @@ namespace AutoWashPro.API.Controllers
             catch (Exception ex)
             {
                 string message = ex.Message;
-                string? detail = ex.InnerException?.Message;
 
                 if (message.Contains("PENDING_QUOTA_EXCEEDED"))
-                    return StatusCode(422, new { error = "PENDING_QUOTA_EXCEEDED", message, detail });
+                    return StatusCode(422, new { error = "PENDING_QUOTA_EXCEEDED", message });
 
                 if (message.Contains("SLOT_NOT_AVAILABLE"))
-                    return StatusCode(422, new { error = "SLOT_NOT_AVAILABLE", message, detail });
+                    return StatusCode(422, new { error = "SLOT_NOT_AVAILABLE", message });
 
                 if (message.Contains("VEHICLE_BUFFER_VIOLATION"))
-                    return StatusCode(422, new { error = "VEHICLE_BUFFER_VIOLATION", message, detail });
+                    return StatusCode(422, new { error = "VEHICLE_BUFFER_VIOLATION", message });
 
                 if (message.Contains("ADVANCE_NOTICE_VIOLATION"))
-                    return StatusCode(422, new { error = "ADVANCE_NOTICE_VIOLATION", message, detail });
+                    return StatusCode(422, new { error = "ADVANCE_NOTICE_VIOLATION", message });
 
                 if (message.Contains("BOOKING_WINDOW_VIOLATION"))
-                    return StatusCode(422, new { error = "BOOKING_WINDOW_VIOLATION", message, detail });
+                    return StatusCode(422, new { error = "BOOKING_WINDOW_VIOLATION", message });
 
                 if (message.Contains("SUSPENDED_ACCOUNT"))
-                    return StatusCode(422, new { error = "SUSPENDED_ACCOUNT", message, detail });
+                    return StatusCode(422, new { error = "SUSPENDED_ACCOUNT", message });
 
                 if (message.Contains("VEHICLE_REQUIRED"))
-                    return BadRequest(new { error = "VEHICLE_REQUIRED", message, detail });
+                    return BadRequest(new { error = "VEHICLE_REQUIRED", message });
 
                 if (message.Contains("INVALID_LICENSE_PLATE"))
-                    return BadRequest(new { error = "INVALID_LICENSE_PLATE", message, detail });
+                    return BadRequest(new { error = "INVALID_LICENSE_PLATE", message });
 
                 if (message.Contains("LICENSE_PLATE_REQUIRED"))
-                    return BadRequest(new { error = "LICENSE_PLATE_REQUIRED", message, detail });
+                    return BadRequest(new { error = "LICENSE_PLATE_REQUIRED", message });
 
                 return BadRequest(new
                 {
                     error = "BAD_REQUEST",
-                    message,
-                    detail
+                    message
                 });
             }
         }
@@ -79,28 +77,58 @@ namespace AutoWashPro.API.Controllers
             [FromQuery] int pageSize = 10,
             [FromQuery] string? guestPhone = null)
         {
-            var customerIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            int? customerId = customerIdClaim != null ? int.Parse(customerIdClaim) : null;
+            try
+            {
+                var customerIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                int? customerId = customerIdClaim != null ? int.Parse(customerIdClaim) : null;
 
-            var result = await _bookingsService.GetCustomerBookingsAsync(
-                customerId,
-                guestPhone,
-                status,
-                page,
-                pageSize);
+                var result = await _bookingsService.GetCustomerBookingsAsync(
+                    customerId,
+                    guestPhone,
+                    status,
+                    page,
+                    pageSize);
 
-            return Ok(result);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                string message = ex.Message;
+
+                if (message.Contains("UNAUTHORIZED"))
+                    return Unauthorized(new { error = "UNAUTHORIZED", message });
+
+                if (message.Contains("NOT_FOUND"))
+                    return NotFound(new { error = "NOT_FOUND", message });
+
+                return BadRequest(new { error = "BAD_REQUEST", message });
+            }
         }
 
         // 3. GET /api/Bookings/{id}
         [HttpGet("{id}")]
         public async Task<IActionResult> GetBookingById(int id, [FromQuery] string? guestPhone = null)
         {
-            var customerIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            int? customerId = customerIdClaim != null ? int.Parse(customerIdClaim) : null;
+            try
+            {
+                var customerIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                int? customerId = customerIdClaim != null ? int.Parse(customerIdClaim) : null;
 
-            var result = await _bookingsService.GetBookingByIdAsync(id, customerId, guestPhone);
-            return Ok(result);
+                var result = await _bookingsService.GetBookingByIdAsync(id, customerId, guestPhone);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                string message = ex.Message;
+
+                if (message.Contains("UNAUTHORIZED"))
+                    return Unauthorized(new { error = "UNAUTHORIZED", message });
+
+                if (message.Contains("NOT_FOUND"))
+                    return NotFound(new { error = "NOT_FOUND", message });
+
+                return BadRequest(new { error = "BAD_REQUEST", message });
+            }
         }
 
         // 4. POST /api/Bookings/{id}/cancel
@@ -118,15 +146,14 @@ namespace AutoWashPro.API.Controllers
             catch (Exception ex)
             {
                 string message = ex.Message;
-                string? detail = ex.InnerException?.Message;
 
                 if (message.Contains("UNAUTHORIZED"))
-                    return Unauthorized(new { error = "UNAUTHORIZED", message, detail });
+                    return Unauthorized(new { error = "UNAUTHORIZED", message });
 
                 if (message.Contains("NOT_FOUND"))
-                    return NotFound(new { error = "NOT_FOUND", message, detail });
+                    return NotFound(new { error = "NOT_FOUND", message });
 
-                return BadRequest(new { error = "BAD_REQUEST", message, detail });
+                return BadRequest(new { error = "BAD_REQUEST", message });
             }
         }
 
@@ -154,15 +181,14 @@ namespace AutoWashPro.API.Controllers
             catch (Exception ex)
             {
                 string message = ex.Message;
-                string? detail = ex.InnerException?.Message;
 
                 if (message.Contains("NOT_FOUND"))
-                    return NotFound(new { error = "NOT_FOUND", message, detail });
+                    return NotFound(new { error = "NOT_FOUND", message });
 
                 if (message.Contains("INVALID_STATUS"))
-                    return BadRequest(new { error = "INVALID_STATUS", message, detail });
+                    return BadRequest(new { error = "INVALID_STATUS", message });
 
-                return BadRequest(new { error = "BAD_REQUEST", message, detail });
+                return BadRequest(new { error = "BAD_REQUEST", message });
             }
         }
 
@@ -185,8 +211,7 @@ namespace AutoWashPro.API.Controllers
                 return BadRequest(new
                 {
                     error = "BAD_REQUEST",
-                    message = ex.Message,
-                    detail = ex.InnerException?.Message
+                    message = ex.Message
                 });
             }
         }
