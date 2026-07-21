@@ -188,8 +188,11 @@ namespace AutoWash.Application.Services
       const int maxParallelSlots = 1;
       var eligibleStatuses = new[] { BookingStatus.Completed, BookingStatus.Pending };
 
-      var rangeStart = startDate.Date;
-      var rangeEnd = endDate.Date.AddDays(1);
+      // ScheduledTime lưu dưới dạng UTC; dịch biên ngày VN sang UTC trước khi so sánh, giống
+      // GetPromotionRoiReportAsync bên dưới — nếu không, booking VN 00:00-07:00 bị loại và booking
+      // sáng sớm hôm sau lại bị tính nhầm vào ngày trước.
+      var rangeStart = startDate.Date.AddHours(-7);
+      var rangeEnd = endDate.Date.AddDays(1).AddHours(-7);
       var totalDays = (endDate.Date - startDate.Date).Days + 1;
 
       var bookings = await _context.Bookings

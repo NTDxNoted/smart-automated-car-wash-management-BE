@@ -70,8 +70,8 @@ namespace AutoWashPro.API.Controllers
 
         return StatusCode(500, new ErrorResponse
         {
-          Error = ex.GetType().Name,
-          Message = ex.InnerException?.Message ?? ex.Message
+          Error = "INTERNAL_SERVER_ERROR",
+          Message = "Đã có lỗi xảy ra, vui lòng thử lại sau."
         });
       }
     }
@@ -137,8 +137,8 @@ namespace AutoWashPro.API.Controllers
 
         return StatusCode(500, new ErrorResponse
         {
-          Error = ex.GetType().Name,
-          Message = ex.InnerException?.Message ?? ex.Message
+          Error = "INTERNAL_SERVER_ERROR",
+          Message = "Đã có lỗi xảy ra, vui lòng thử lại sau."
         });
       }
     }

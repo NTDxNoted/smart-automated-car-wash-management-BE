@@ -59,6 +59,10 @@ namespace AutoWashPro.API.Controllers.Admin
             {
                 return BadRequest(new { message = "Mã khuyến mãi này đã tồn tại trong hệ thống" });
             }
+            catch (ArgumentException ex) when (ex.Message == "PROMO_INVALID_PERCENTAGE")
+            {
+                return BadRequest(new { message = "Giá trị giảm giá theo % không được vượt quá 100" });
+            }
             catch (Exception ex)
             {
                 return StatusCode(StatusCodes.Status500InternalServerError, new { message = ex.Message });
@@ -87,6 +91,10 @@ namespace AutoWashPro.API.Controllers.Admin
             catch (KeyNotFoundException)
             {
                 return NotFound(new { message = "Không tìm thấy chương trình khuyến mãi" });
+            }
+            catch (ArgumentException ex) when (ex.Message == "PROMO_INVALID_PERCENTAGE")
+            {
+                return BadRequest(new { message = "Giá trị giảm giá theo % không được vượt quá 100" });
             }
             catch (Exception ex)
             {

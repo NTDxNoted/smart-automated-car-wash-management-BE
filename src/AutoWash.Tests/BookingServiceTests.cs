@@ -250,7 +250,9 @@ namespace AutoWash.Tests.Application.Services
         Status = "Active"
       });
 
-      var today = DateTime.UtcNow.Date;
+      // Dùng ngày mai thay vì "hôm nay" để AddHours(8)/(16) không bao giờ rơi vào quá khứ hoặc vi
+      // phạm BR-29 (advance notice 60 phút) tùy theo giờ chạy test trong ngày (test cũ bị flaky).
+      var today = DateTime.UtcNow.Date.AddDays(1);
       dbContext.Bookings.AddRange(
           new Booking
           {

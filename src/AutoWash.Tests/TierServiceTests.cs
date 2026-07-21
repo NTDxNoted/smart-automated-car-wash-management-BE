@@ -78,6 +78,34 @@ namespace AutoWash.Tests.Application.Services
     }
 
     [Fact]
+    public async Task UpdateTierAsync_WithMinSpendingBelowLowerPriorityTier_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      SeedTiers(dbContext);
+      var service = CreateService(dbContext);
+
+      // Gold (PriorityScore=3) đang MinSpending=3,000,000; Silver (PriorityScore=2) đang 1,000,000.
+      // Sửa Gold xuống 500,000 (thấp hơn Silver) sẽ đảo thứ tự PriorityScore <-> MinSpending.
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.UpdateTierAsync(3, new UpdateTierRequest { MinSpending = 500_000 }));
+
+      Assert.StartsWith("INVALID_REQUEST", ex.Message);
+      var persisted = await dbContext.Tiers.FirstAsync(t => t.TierID == 3);
+      Assert.Equal(3_000_000, persisted.MinSpending); // không bị thay đổi khi request không hợp lệ
+    }
+
+    [Fact]
+    public async Task UpdateTierAsync_WithMinSpendingKeepingOrder_ShouldSucceed()
+    {
+      using var dbContext = CreateDbContext();
+      SeedTiers(dbContext);
+      var service = CreateService(dbContext);
+
+      var result = await service.UpdateTierAsync(3, new UpdateTierRequest { MinSpending = 4_000_000 });
+
+      Assert.Equal(4_000_000, result.MinSpending);
+    }
+
+    [Fact]
     public async Task UpdateTierAsync_WithNonExistentTier_ShouldThrow()
     {
       using var dbContext = CreateDbContext();

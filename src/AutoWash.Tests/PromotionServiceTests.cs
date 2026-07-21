@@ -280,5 +280,64 @@ namespace AutoWash.Tests.Application.Services
                 () => service.CreatePromotionAsync(request));
             Assert.Equal("PROMO_CODE_EXISTS", exception.Message);
         }
+
+        [Fact]
+        public async Task CreatePromotionAsync_WithPercentageOver100_ShouldThrowPROMO_INVALID_PERCENTAGE()
+        {
+            var dbContext = CreateDbContext();
+            var service = new PromotionService(dbContext);
+
+            var request = new CreatePromoRequest
+            {
+                Title = "Too Generous Promo",
+                PromoCode = "FREE200",
+                DiscountType = "Percentage",
+                DiscountValue = 200m,
+                StartDate = DateTime.UtcNow,
+                EndDate = DateTime.UtcNow.AddDays(5),
+                IsActive = true
+            };
+
+            var exception = await Assert.ThrowsAsync<ArgumentException>(
+                () => service.CreatePromotionAsync(request));
+            Assert.Equal("PROMO_INVALID_PERCENTAGE", exception.Message);
+            Assert.Equal(0, await dbContext.Promotions.CountAsync());
+        }
+
+        [Fact]
+        public async Task UpdatePromotionAsync_WithPercentageOver100_ShouldThrowPROMO_INVALID_PERCENTAGE()
+        {
+            var dbContext = CreateDbContext();
+            var service = new PromotionService(dbContext);
+
+            var promo = new Promotion
+            {
+                PromotionID = 1,
+                Title = "Existing Promo",
+                PromoCode = "EXIST01",
+                DiscountType = "Percentage",
+                DiscountValue = 10m,
+                StartDate = DateTime.UtcNow,
+                EndDate = DateTime.UtcNow.AddDays(5),
+                IsActive = true
+            };
+            dbContext.Promotions.Add(promo);
+            await dbContext.SaveChangesAsync();
+
+            var request = new UpdatePromoRequest
+            {
+                Title = "Existing Promo",
+                DiscountType = "Percentage",
+                DiscountValue = 150m,
+                StartDate = DateTime.UtcNow,
+                EndDate = DateTime.UtcNow.AddDays(5),
+                IsActive = true
+            };
+
+            var exception = await Assert.ThrowsAsync<ArgumentException>(
+                () => service.UpdatePromotionAsync(promo.PromotionID, request));
+            Assert.Equal("PROMO_INVALID_PERCENTAGE", exception.Message);
+            Assert.Equal(10m, promo.DiscountValue); // không bị thay đổi khi request không hợp lệ
+        }
     }
 }
