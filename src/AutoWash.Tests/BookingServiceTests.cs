@@ -407,6 +407,48 @@ namespace AutoWash.Tests.Application.Services
       Assert.True(result.BookingId > 0);
     }
 
+    [Fact]
+    public async Task CreateBookingAsync_AsGuestWithInvalidLicensePlate_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa xe cơ bản", ServiceCategory = "Basic", Price = 80000, Duration = 20, Status = "Active" });
+      await dbContext.SaveChangesAsync();
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var request = new CreateBookingRequest
+      {
+        ServiceId = 1,
+        Phone = "0909999888",
+        LicensePlate = "AEDADAWDAWD",
+        ScheduledTime = DateTime.UtcNow.AddHours(2)
+      };
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CreateBookingAsync(request, null));
+
+      Assert.StartsWith("INVALID_LICENSE_PLATE", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_AsMemberWithInvalidInlineLicensePlate_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      SeedPriorityTiers(dbContext);
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa xe cơ bản", ServiceCategory = "Basic", Price = 80000, Duration = 20, Status = "Active" });
+      var customer = SeedCustomerWithVehicle(dbContext, 1, tierId: 1, phone: "0901111111", plate: "51A-000.01");
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var request = new CreateBookingRequest
+      {
+        ServiceId = 1,
+        LicensePlate = "12345", // không qua VehicleId, nhập tay biển số mới sai định dạng
+        ScheduledTime = DateTime.UtcNow.AddHours(2)
+      };
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CreateBookingAsync(request, customer.CustomerID));
+
+      Assert.StartsWith("INVALID_LICENSE_PLATE", ex.Message);
+    }
+
     private static (Customer customer, RewardsCatalog reward) SeedCustomerWithRewardEligibility(
         ApplicationDbContext dbContext, string discountType, decimal discountAmount, int loyaltyPoints = 100)
     {
