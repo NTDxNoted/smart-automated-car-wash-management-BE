@@ -408,6 +408,142 @@ namespace AutoWash.Tests.Application.Services
     }
 
     [Fact]
+    public async Task GetAvailableSlotsAsync_ShouldMarkTheActuallyBookedLocalSlotAsUnavailable()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa cơ bản", ServiceCategory = "Basic", Price = 50000, Duration = 20, Status = "Active" });
+      await dbContext.SaveChangesAsync();
+
+      // Chọn ngày mai (giờ VN) để chắc chắn nằm trong window hiển thị mặc định (7 ngày) và
+      // tránh trường hợp biên nửa đêm ảnh hưởng tới BR-29 (advance notice 60 phút).
+      // Các slot được sinh ra lúc :30 (07:30, 08:30, ...) nên đặt trùng giờ :30 để chắc chắn overlap.
+      var targetLocalDate = DateTime.UtcNow.AddHours(7).Date.AddDays(1);
+      var bookedLocalTime = targetLocalDate.AddHours(14).AddMinutes(30); // 14:30 giờ VN
+      var bookedUtc = bookedLocalTime.AddHours(-7); // ScheduledTime phải lưu dưới dạng UTC
+
+      dbContext.Bookings.Add(new Booking
+      {
+        CustomerID = 0,
+        Phone = "0909999888",
+        VehicleID = 0,
+        LicensePlate = "51Z-999.88",
+        ServiceID = 1,
+        ScheduledTime = bookedUtc,
+        Status = BookingStatus.Pending,
+        FinalAmount = 50000m,
+        CreatedAt = DateTime.UtcNow
+      });
+      await dbContext.SaveChangesAsync();
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var slots = (await service.GetAvailableSlotsAsync(null, targetLocalDate.ToString("yyyy-MM-dd"), null)).ToList();
+
+      var daySlots = Assert.Single(slots).Slots;
+      var bookedSlot = daySlots.Single(s => s.Time == "14:30");
+
+      Assert.False(bookedSlot.IsAvailable);
+      Assert.Equal(0, bookedSlot.AvailableCount);
+    }
+
+    [Fact]
+    public async Task GetAvailableSlotsAsync_WithSameLicensePlateWithin120Minutes_ShouldBeUnavailable()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa cơ bản", ServiceCategory = "Basic", Price = 50000, Duration = 20, Status = "Active" });
+      await dbContext.SaveChangesAsync();
+
+      var targetLocalDate = DateTime.UtcNow.AddHours(7).Date.AddDays(1);
+      var bookedLocalTime = targetLocalDate.AddHours(14).AddMinutes(30); // 14:30 giờ VN
+      var bookedUtc = bookedLocalTime.AddHours(-7);
+
+      dbContext.Bookings.Add(new Booking
+      {
+        CustomerID = 0,
+        Phone = "0909999888",
+        VehicleID = 0,
+        LicensePlate = "51Z-999.88",
+        ServiceID = 1,
+        ScheduledTime = bookedUtc,
+        Status = BookingStatus.Pending,
+        FinalAmount = 50000m,
+        CreatedAt = DateTime.UtcNow
+      });
+      await dbContext.SaveChangesAsync();
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      // Slot 15:30 giờ VN cách slot đã đặt (14:30) đúng 60 phút — trong vùng đệm BR-28 (<120 phút)
+      var slots = (await service.GetAvailableSlotsAsync(null, targetLocalDate.ToString("yyyy-MM-dd"), "51Z-999.88")).ToList();
+
+      var daySlots = Assert.Single(slots).Slots;
+      var nearbySlot = daySlots.Single(s => s.Time == "15:30");
+
+      Assert.False(nearbySlot.IsAvailable);
+    }
+
+    [Fact]
+    public async Task GetAvailableSlotsAsync_WithDifferentLicensePlateWithin120Minutes_ShouldStillBeAvailable()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa cơ bản", ServiceCategory = "Basic", Price = 50000, Duration = 20, Status = "Active" });
+      await dbContext.SaveChangesAsync();
+
+      var targetLocalDate = DateTime.UtcNow.AddHours(7).Date.AddDays(1);
+      var bookedLocalTime = targetLocalDate.AddHours(14).AddMinutes(30);
+      var bookedUtc = bookedLocalTime.AddHours(-7);
+
+      dbContext.Bookings.Add(new Booking
+      {
+        CustomerID = 0,
+        Phone = "0909999888",
+        VehicleID = 0,
+        LicensePlate = "51Z-999.88",
+        ServiceID = 1,
+        ScheduledTime = bookedUtc,
+        Status = BookingStatus.Pending,
+        FinalAmount = 50000m,
+        CreatedAt = DateTime.UtcNow
+      });
+      await dbContext.SaveChangesAsync();
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      // Biển số khác — không bị ràng buộc BR-28, chỉ ràng buộc bởi overlap thời gian (không trùng slot 14:30)
+      var slots = (await service.GetAvailableSlotsAsync(null, targetLocalDate.ToString("yyyy-MM-dd"), "29A-11111")).ToList();
+
+      var daySlots = Assert.Single(slots).Slots;
+      var nearbySlot = daySlots.Single(s => s.Time == "15:30");
+
+      Assert.True(nearbySlot.IsAvailable);
+    }
+
+    [Fact]
+    public async Task GetAvailableSlotsAsync_ShouldRespectTierBookingWindowDays()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Tiers.Add(new Tier { TierID = 2, TierName = "Silver", MinSpending = 0, BookingWindowDays = 2, DiscountRate = 5, PriorityScore = 2 });
+      var customer = new Customer { CustomerID = 1, FullName = "Test", Phone = "0901111111", Password = "pw", TierID = 2, CreatedAt = DateTime.UtcNow };
+      dbContext.Customers.Add(customer);
+      await dbContext.SaveChangesAsync();
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var slots = (await service.GetAvailableSlotsAsync(customer.CustomerID, null, null)).ToList();
+
+      Assert.Equal(2, slots.Count); // BookingWindowDays = 2, không phải mặc định 7 của Guest
+    }
+
+    [Fact]
+    public async Task GetAvailableSlotsAsync_WithDateFilter_ShouldOnlyReturnThatDate()
+    {
+      using var dbContext = CreateDbContext();
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+
+      var targetLocalDate = DateTime.UtcNow.AddHours(7).Date.AddDays(1);
+      var slots = (await service.GetAvailableSlotsAsync(null, targetLocalDate.ToString("yyyy-MM-dd"), null)).ToList();
+
+      Assert.Single(slots);
+      Assert.Equal(targetLocalDate.ToString("yyyy-MM-dd"), slots[0].Date);
+    }
+
+    [Fact]
     public async Task CreateBookingAsync_ShouldNotifyBookingHubWithAvailableStatus()
     {
       using var dbContext = CreateDbContext();
