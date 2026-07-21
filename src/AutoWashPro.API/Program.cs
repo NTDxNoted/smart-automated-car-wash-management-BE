@@ -79,6 +79,8 @@ builder.Services.AddAuthentication(options =>
 // SignalR: đẩy thông báo real-time cho Admin, thay cho polling 5 giây ở FE.
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IAdminNotifier, SignalRAdminNotifier>();
+// BookingHub: đẩy cập nhật số chỗ trống theo thời gian thực cho trang đặt lịch (public, cả Guest lẫn Member).
+builder.Services.AddScoped<IBookingHubNotifier, SignalRBookingHubNotifier>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAdminAuthService, AdminAuthService>();
@@ -145,6 +147,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.MapHub<AdminNotificationHub>("/hubs/admin-notifications");
+app.MapHub<BookingHub>("/hubs/booking");
 // Nút test kết nối Database
 app.MapGet("/api/test-db", async (ApplicationDbContext dbContext) =>
 {

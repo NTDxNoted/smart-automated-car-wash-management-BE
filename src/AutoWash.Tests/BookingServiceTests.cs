@@ -408,6 +408,71 @@ namespace AutoWash.Tests.Application.Services
     }
 
     [Fact]
+    public async Task CreateBookingAsync_ShouldNotifyBookingHubWithAvailableStatus()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa cơ bản", ServiceCategory = "Basic", Price = 50000, Duration = 20, Status = "Active" });
+      await dbContext.SaveChangesAsync();
+
+      var hubMock = new Mock<IBookingHubNotifier>();
+      var options = Options.Create(new BookingSettings { MaxParallelSlots = 2, PriorityBufferSlots = 0 });
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>(), null, options, null, hubMock.Object);
+
+      var scheduledTime = DateTime.UtcNow.AddHours(3);
+      var request = new CreateBookingRequest { ServiceId = 1, Phone = "0909999888", LicensePlate = "51Z-999.88", ScheduledTime = scheduledTime };
+
+      await service.CreateBookingAsync(request, null);
+
+      var expectedLocal = scheduledTime.AddHours(7);
+      hubMock.Verify(h => h.NotifySlotOccupancyChangedAsync(
+          expectedLocal.ToString("yyyy-MM-dd"),
+          expectedLocal.ToString("HH:mm"),
+          1, // maxParallelSlots(2) - occupied(1)
+          "Available"), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_WhenSlotBecomesFull_ShouldNotifyBookingHubWithFullStatus()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa cơ bản", ServiceCategory = "Basic", Price = 50000, Duration = 20, Status = "Active" });
+      await dbContext.SaveChangesAsync();
+
+      var hubMock = new Mock<IBookingHubNotifier>();
+      var options = Options.Create(new BookingSettings { MaxParallelSlots = 1, PriorityBufferSlots = 0 });
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>(), null, options, null, hubMock.Object);
+
+      var scheduledTime = DateTime.UtcNow.AddHours(3);
+      var request = new CreateBookingRequest { ServiceId = 1, Phone = "0909999888", LicensePlate = "51Z-999.88", ScheduledTime = scheduledTime };
+
+      await service.CreateBookingAsync(request, null);
+
+      hubMock.Verify(h => h.NotifySlotOccupancyChangedAsync(
+          It.IsAny<string>(), It.IsAny<string>(), 0, "Full"), Times.Once);
+    }
+
+    [Fact]
+    public async Task CancelBookingAsync_ShouldNotifyBookingHubWithFreedSlot()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa cơ bản", ServiceCategory = "Basic", Price = 50000, Duration = 20, Status = "Active" });
+      await dbContext.SaveChangesAsync();
+
+      var hubMock = new Mock<IBookingHubNotifier>();
+      var options = Options.Create(new BookingSettings { MaxParallelSlots = 1, PriorityBufferSlots = 0 });
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>(), null, options, null, hubMock.Object);
+
+      var scheduledTime = DateTime.UtcNow.AddHours(3);
+      var request = new CreateBookingRequest { ServiceId = 1, Phone = "0909999888", LicensePlate = "51Z-999.88", ScheduledTime = scheduledTime };
+      var created = await service.CreateBookingAsync(request, null);
+
+      await service.CancelBookingAsync(created.BookingId, null, "0909999888");
+
+      hubMock.Verify(h => h.NotifySlotOccupancyChangedAsync(
+          It.IsAny<string>(), It.IsAny<string>(), 1, "Available"), Times.Once);
+    }
+
+    [Fact]
     public async Task CreateBookingAsync_AsGuestWithInvalidLicensePlate_ShouldThrow()
     {
       using var dbContext = CreateDbContext();

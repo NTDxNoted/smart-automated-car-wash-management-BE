@@ -21,12 +21,13 @@ namespace AutoWash.Application.Services
         private readonly IPointService? _pointService;
         private readonly BookingSettings _bookingSettings;
         private readonly IAdminNotifier? _adminNotifier;
+        private readonly IBookingHubNotifier? _bookingHubNotifier;
 
         public BookingService(
             IApplicationDbContext context,
             ILogger<BookingService> logger,
             ITierService tierService)
-            : this(context, logger, tierService, null, Microsoft.Extensions.Options.Options.Create(new BookingSettings()), null)
+            : this(context, logger, tierService, null, Microsoft.Extensions.Options.Options.Create(new BookingSettings()), null, null)
         {
         }
 
@@ -35,7 +36,7 @@ namespace AutoWash.Application.Services
             ILogger<BookingService> logger,
             ITierService tierService,
             IPointService? pointService)
-            : this(context, logger, tierService, pointService, Microsoft.Extensions.Options.Options.Create(new BookingSettings()), null)
+            : this(context, logger, tierService, pointService, Microsoft.Extensions.Options.Options.Create(new BookingSettings()), null, null)
         {
         }
 
@@ -44,20 +45,21 @@ namespace AutoWash.Application.Services
             ILogger<BookingService> logger,
             ITierService tierService,
             IOptions<BookingSettings> bookingSettings)
-            : this(context, logger, tierService, null, bookingSettings, null)
+            : this(context, logger, tierService, null, bookingSettings, null, null)
         {
         }
 
-        // Constructor thật dùng lúc runtime (DI resolve) — IAdminNotifier để null (không truyền)
-        // vẫn chạy bình thường, chỉ là không đẩy real-time notification (dùng cho unit test cũ
-        // không quan tâm tới SignalR, xem BookingServiceTests.cs).
+        // Constructor thật dùng lúc runtime (DI resolve) — IAdminNotifier/IBookingHubNotifier để null
+        // (không truyền) vẫn chạy bình thường, chỉ là không đẩy real-time notification (dùng cho unit
+        // test cũ không quan tâm tới SignalR, xem BookingServiceTests.cs).
         public BookingService(
             IApplicationDbContext context,
             ILogger<BookingService> logger,
             ITierService tierService,
             IPointService? pointService,
             IOptions<BookingSettings> bookingSettings,
-            IAdminNotifier? adminNotifier)
+            IAdminNotifier? adminNotifier,
+            IBookingHubNotifier? bookingHubNotifier)
         {
             _context = context;
             _logger = logger;
@@ -65,6 +67,7 @@ namespace AutoWash.Application.Services
             _pointService = pointService;
             _bookingSettings = bookingSettings.Value;
             _adminNotifier = adminNotifier;
+            _bookingHubNotifier = bookingHubNotifier;
         }
 
         // POST /api/Bookings
@@ -431,6 +434,20 @@ namespace AutoWash.Application.Services
                 await _adminNotifier.NotifyNewBookingAsync(booking.BookingID, customer?.FullName ?? phone, licensePlate, service.ServiceName);
             }
 
+            // BR-Realtime: đẩy tình trạng khung giờ cho toàn bộ client đang xem trang đặt lịch.
+            // overlapCount là số booking trùng slot TRƯỚC khi thêm booking này, nên +1 để có số hiện tại.
+            if (_bookingHubNotifier != null)
+            {
+                var occupiedCount = Math.Min(maxParallelSlots, overlapCount + 1);
+                var availableCount = Math.Max(0, maxParallelSlots - occupiedCount);
+                var slotLocal = newStart.AddHours(7);
+                await _bookingHubNotifier.NotifySlotOccupancyChangedAsync(
+                    slotLocal.ToString("yyyy-MM-dd"),
+                    slotLocal.ToString("HH:mm"),
+                    availableCount,
+                    availableCount > 0 ? "Available" : "Full");
+            }
+
             return new BookingResponseDto
             {
                 BookingId = booking.BookingID,
@@ -609,6 +626,43 @@ namespace AutoWash.Application.Services
             }
 
             await _context.SaveChangesAsync();
+
+            // BR-Realtime: hủy lịch giải phóng 1 chỗ trong slot — đẩy lại số chỗ trống hiện tại
+            // cho toàn bộ client đang xem trang đặt lịch.
+            if (_bookingHubNotifier != null)
+            {
+                var slotService = await _context.Services.FirstOrDefaultAsync(s => s.ServiceID == booking.ServiceID);
+                var duration = slotService?.Duration ?? 0;
+                var slotStart = booking.ScheduledTime;
+                var slotEnd = slotStart.AddMinutes(duration + 5);
+
+                var activeBookings = await _context.Bookings
+                    .Where(b => b.Status != BookingStatus.Cancelled && b.Status != BookingStatus.Failed)
+                    .Where(b => b.ScheduledTime.Date == slotStart.Date)
+                    .Select(b => new
+                    {
+                        b.ScheduledTime,
+                        Duration = _context.Services.Where(s => s.ServiceID == b.ServiceID).Select(s => s.Duration).FirstOrDefault()
+                    })
+                    .ToListAsync();
+
+                int overlapCount = 0;
+                foreach (var b in activeBookings)
+                {
+                    var bStart = b.ScheduledTime;
+                    var bEnd = bStart.AddMinutes(b.Duration + 5);
+                    if (bStart < slotEnd && slotStart < bEnd) overlapCount++;
+                }
+
+                int maxParallelSlots = _bookingSettings.MaxParallelSlots > 0 ? _bookingSettings.MaxParallelSlots : 1;
+                var availableCount = Math.Max(0, maxParallelSlots - overlapCount);
+                var slotLocal = slotStart.AddHours(7);
+                await _bookingHubNotifier.NotifySlotOccupancyChangedAsync(
+                    slotLocal.ToString("yyyy-MM-dd"),
+                    slotLocal.ToString("HH:mm"),
+                    availableCount,
+                    availableCount > 0 ? "Available" : "Full");
+            }
 
             return new CancelBookingResponseDto
             {
