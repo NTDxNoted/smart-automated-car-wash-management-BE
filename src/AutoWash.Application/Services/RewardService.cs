@@ -21,6 +21,11 @@ namespace AutoWash.Application.Services
             _logger = logger;
         }
 
+        private static readonly HashSet<string> ValidDiscountTypes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Fixed_Amount", "Percentage"
+        };
+
         public async Task<IEnumerable<RewardResponse>> GetActiveRewardsAsync()
         {
             return await _context.RewardsCatalog
@@ -32,6 +37,7 @@ namespace AutoWash.Application.Services
                     Description = r.Description,
                     PointsRequired = r.PointsRequired,
                     DiscountAmount = r.DiscountAmount,
+                    DiscountType = r.DiscountType,
                     IsActive = r.IsActive
                 })
                 .ToListAsync();
@@ -44,12 +50,16 @@ namespace AutoWash.Application.Services
                 request.PointsRequired <= 0)
                 throw new Exception("INVALID_REQUEST: Thiếu thông tin bắt buộc.");
 
+            if (!string.IsNullOrWhiteSpace(request.DiscountType) && !ValidDiscountTypes.Contains(request.DiscountType))
+                throw new Exception("INVALID_REQUEST: DiscountType phải là 'Fixed_Amount' hoặc 'Percentage'.");
+
             var reward = new RewardsCatalog
             {
                 RewardName = request.RewardName,
                 Description = request.Description,
                 PointsRequired = request.PointsRequired,
                 DiscountAmount = request.DiscountAmount,
+                DiscountType = string.IsNullOrWhiteSpace(request.DiscountType) ? "Fixed_Amount" : request.DiscountType,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow
             };
@@ -65,10 +75,14 @@ namespace AutoWash.Application.Services
             if (reward == null)
                 throw new Exception("NOT_FOUND: Không tìm thấy phần thưởng.");
 
+            if (request.DiscountType != null && !ValidDiscountTypes.Contains(request.DiscountType))
+                throw new Exception("INVALID_REQUEST: DiscountType phải là 'Fixed_Amount' hoặc 'Percentage'.");
+
             if (request.RewardName != null) reward.RewardName = request.RewardName;
             if (request.Description != null) reward.Description = request.Description;
             if (request.PointsRequired.HasValue) reward.PointsRequired = request.PointsRequired.Value;
             if (request.DiscountAmount.HasValue) reward.DiscountAmount = request.DiscountAmount.Value;
+            if (request.DiscountType != null) reward.DiscountType = request.DiscountType;
 
             await _context.SaveChangesAsync();
             return MapToResponse(reward);
@@ -92,6 +106,7 @@ namespace AutoWash.Application.Services
             Description = r.Description,
             PointsRequired = r.PointsRequired,
             DiscountAmount = r.DiscountAmount,
+            DiscountType = r.DiscountType,
             IsActive = r.IsActive
         };
     }
