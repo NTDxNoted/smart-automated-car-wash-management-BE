@@ -124,6 +124,79 @@ namespace AutoWash.Tests.Application.Services
     }
 
     [Fact]
+    public async Task UpdateBookingStatusAsync_WhenGuestNoShow_ShouldNotSuspendSharedGuestAccount()
+    {
+      using var dbContext = CreateDbContext();
+
+      // Tài khoản "Khách vãng lai" dùng chung mà BookingService gán cho mọi booking không đăng nhập.
+      var guestAccount = new Customer
+      {
+        CustomerID = 1,
+        FullName = "Khách vãng lai",
+        Phone = "GUEST",
+        Password = "GUEST",
+        Role = "MEMBER",
+        CreatedAt = DateTime.UtcNow
+      };
+      dbContext.Customers.Add(guestAccount);
+
+      // Hai khách lạ khác nhau (số điện thoại khác nhau) từng no-show, đều trỏ CustomerID=1 (guest chung).
+      dbContext.Bookings.AddRange(
+          new Booking
+          {
+            BookingID = 1,
+            CustomerID = 1,
+            Phone = "0911111111",
+            ServiceID = 1,
+            LicensePlate = "51A-111.11",
+            ScheduledTime = DateTime.UtcNow.AddDays(-20),
+            Status = BookingStatus.NoShow,
+            CompletedAt = DateTime.UtcNow.AddDays(-20),
+            CreatedAt = DateTime.UtcNow.AddDays(-20)
+          },
+          new Booking
+          {
+            BookingID = 2,
+            CustomerID = 1,
+            Phone = "0922222222",
+            ServiceID = 1,
+            LicensePlate = "51A-222.22",
+            ScheduledTime = DateTime.UtcNow.AddDays(-10),
+            Status = BookingStatus.NoShow,
+            CompletedAt = DateTime.UtcNow.AddDays(-10),
+            CreatedAt = DateTime.UtcNow.AddDays(-10)
+          }
+      );
+
+      // Khách lạ thứ 3 (số điện thoại khác) đang no-show — không liên quan đến 2 khách trên.
+      dbContext.Bookings.Add(new Booking
+      {
+        BookingID = 3,
+        CustomerID = 1,
+        Phone = "0933333333",
+        ServiceID = 1,
+        LicensePlate = "51A-333.33",
+        ScheduledTime = DateTime.UtcNow.AddMinutes(10),
+        Status = BookingStatus.Pending,
+        CreatedAt = DateTime.UtcNow
+      });
+
+      await dbContext.SaveChangesAsync();
+
+      var logger = Mock.Of<ILogger<AdminBookingService>>();
+      var service = new AdminBookingService(dbContext, logger);
+
+      await service.UpdateBookingStatusAsync(3, new UpdateBookingStatusRequest
+      {
+        NewStatus = "NoShow"
+      });
+
+      // Guest dùng chung không được khóa/suspend dựa trên no-show của các khách lạ không liên quan.
+      Assert.False(guestAccount.IsLocked);
+      Assert.Null(guestAccount.SuspendedUntil);
+    }
+
+    [Fact]
     public async Task UpdateBookingStatusAsync_WhenCompleted_ShouldUpdateSpendingAndTriggerTierAndPoints()
     {
       using var dbContext = CreateDbContext();

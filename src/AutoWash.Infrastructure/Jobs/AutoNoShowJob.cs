@@ -72,8 +72,11 @@ namespace AutoWash.Infrastructure.Jobs
 
                         foreach (var booking in overdueBookings)
                         {
+                            // c.Phone != "GUEST" loại trừ tài khoản khách vãng lai dùng chung (BookingService gán mọi
+                            // booking guest vào 1 CustomerID) — nếu không, no-show của các khách lạ khác nhau sẽ bị
+                            // cộng dồn và khóa nhầm tài khoản hệ thống dùng chung.
                             var customer = await dbContext.Customers.FirstOrDefaultAsync(c =>
-                                (booking.CustomerID > 0 && c.CustomerID == booking.CustomerID) ||
+                                (booking.CustomerID > 0 && c.CustomerID == booking.CustomerID && c.Phone != "GUEST") ||
                                 (!string.IsNullOrWhiteSpace(booking.Phone) && c.Phone == booking.Phone), stoppingToken);
 
                             if (customer == null)
