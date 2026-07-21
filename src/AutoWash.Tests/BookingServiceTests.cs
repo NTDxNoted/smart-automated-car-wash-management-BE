@@ -6,6 +6,7 @@ using AutoWash.Domain.Enums;
 using AutoWash.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 
@@ -295,6 +296,115 @@ namespace AutoWash.Tests.Application.Services
 
       Assert.True(result.BookingId > 0);
       Assert.Equal("Pending", result.Status);
+    }
+
+    private static BookingService CreateServiceWithPriorityBuffer(ApplicationDbContext dbContext, int maxParallelSlots, int priorityBufferSlots)
+    {
+      var options = Options.Create(new BookingSettings { MaxParallelSlots = maxParallelSlots, PriorityBufferSlots = priorityBufferSlots });
+      return new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>(), options);
+    }
+
+    private static void SeedPriorityTiers(ApplicationDbContext dbContext)
+    {
+      dbContext.Tiers.Add(new Tier { TierID = 1, TierName = "Member", MinSpending = 0, BookingWindowDays = 7, DiscountRate = 0, PriorityScore = 1 });
+      dbContext.Tiers.Add(new Tier { TierID = 2, TierName = "Silver", MinSpending = 1_000_000, BookingWindowDays = 10, DiscountRate = 5, PriorityScore = 2 });
+      dbContext.SaveChanges();
+    }
+
+    private static Customer SeedCustomerWithVehicle(ApplicationDbContext dbContext, int customerId, int tierId, string phone, string plate)
+    {
+      var customer = new Customer { CustomerID = customerId, FullName = "Customer " + customerId, Phone = phone, Password = "pw", TierID = tierId, CreatedAt = DateTime.UtcNow };
+      dbContext.Customers.Add(customer);
+      dbContext.Vehicles.Add(new Vehicle { VehicleID = customerId, CustomerID = customerId, LicensePlate = plate, IsActive = true });
+      dbContext.SaveChanges();
+      return customer;
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_WhenSlotFullAndCustomerIsBaseTier_ShouldThrowSlotNotAvailable()
+    {
+      using var dbContext = CreateDbContext();
+      SeedPriorityTiers(dbContext);
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa cơ bản", ServiceCategory = "Basic", Price = 50000, Duration = 20, Status = "Active" });
+      var occupant = SeedCustomerWithVehicle(dbContext, 1, tierId: 1, phone: "0901111111", plate: "51A-000.01");
+      var requester = SeedCustomerWithVehicle(dbContext, 2, tierId: 1, phone: "0901111112", plate: "51A-000.02"); // cùng Member, không ưu tiên
+
+      var scheduledTime = DateTime.UtcNow.AddHours(3);
+      dbContext.Bookings.Add(new Booking { CustomerID = occupant.CustomerID, Phone = occupant.Phone, VehicleID = 1, LicensePlate = "51A-000.01", ServiceID = 1, ScheduledTime = scheduledTime, Status = BookingStatus.Pending, FinalAmount = 50000m, CreatedAt = DateTime.UtcNow });
+      await dbContext.SaveChangesAsync();
+
+      var service = CreateServiceWithPriorityBuffer(dbContext, maxParallelSlots: 1, priorityBufferSlots: 1);
+      var request = new CreateBookingRequest { ServiceId = 1, VehicleId = 2, ScheduledTime = scheduledTime };
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CreateBookingAsync(request, requester.CustomerID));
+
+      Assert.StartsWith("SLOT_NOT_AVAILABLE", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_WhenSlotFullButCustomerIsHigherTier_ShouldSucceedUsingPriorityBuffer()
+    {
+      using var dbContext = CreateDbContext();
+      SeedPriorityTiers(dbContext);
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa cơ bản", ServiceCategory = "Basic", Price = 50000, Duration = 20, Status = "Active" });
+      var occupant = SeedCustomerWithVehicle(dbContext, 1, tierId: 1, phone: "0901111111", plate: "51A-000.01");
+      var requester = SeedCustomerWithVehicle(dbContext, 2, tierId: 2, phone: "0901111112", plate: "51A-000.02"); // Silver > Member
+
+      var scheduledTime = DateTime.UtcNow.AddHours(3);
+      dbContext.Bookings.Add(new Booking { CustomerID = occupant.CustomerID, Phone = occupant.Phone, VehicleID = 1, LicensePlate = "51A-000.01", ServiceID = 1, ScheduledTime = scheduledTime, Status = BookingStatus.Pending, FinalAmount = 50000m, CreatedAt = DateTime.UtcNow });
+      await dbContext.SaveChangesAsync();
+
+      var service = CreateServiceWithPriorityBuffer(dbContext, maxParallelSlots: 1, priorityBufferSlots: 1);
+      var request = new CreateBookingRequest { ServiceId = 1, VehicleId = 2, ScheduledTime = scheduledTime };
+
+      var result = await service.CreateBookingAsync(request, requester.CustomerID);
+
+      Assert.True(result.BookingId > 0);
+      Assert.Equal("Pending", result.Status);
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_WhenBaseSlotAndPriorityBufferBothFull_ShouldThrowEvenForHigherTier()
+    {
+      using var dbContext = CreateDbContext();
+      SeedPriorityTiers(dbContext);
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa cơ bản", ServiceCategory = "Basic", Price = 50000, Duration = 20, Status = "Active" });
+      var occupant1 = SeedCustomerWithVehicle(dbContext, 1, tierId: 1, phone: "0901111111", plate: "51A-000.01");
+      var occupant2 = SeedCustomerWithVehicle(dbContext, 2, tierId: 2, phone: "0901111112", plate: "51A-000.02");
+      var requester = SeedCustomerWithVehicle(dbContext, 3, tierId: 2, phone: "0901111113", plate: "51A-000.03");
+
+      var scheduledTime = DateTime.UtcNow.AddHours(3);
+      dbContext.Bookings.AddRange(
+          new Booking { CustomerID = occupant1.CustomerID, Phone = occupant1.Phone, VehicleID = 1, LicensePlate = "51A-000.01", ServiceID = 1, ScheduledTime = scheduledTime, Status = BookingStatus.Pending, FinalAmount = 50000m, CreatedAt = DateTime.UtcNow },
+          new Booking { CustomerID = occupant2.CustomerID, Phone = occupant2.Phone, VehicleID = 2, LicensePlate = "51A-000.02", ServiceID = 1, ScheduledTime = scheduledTime, Status = BookingStatus.Pending, FinalAmount = 50000m, CreatedAt = DateTime.UtcNow }
+      );
+      await dbContext.SaveChangesAsync();
+
+      var service = CreateServiceWithPriorityBuffer(dbContext, maxParallelSlots: 1, priorityBufferSlots: 1);
+      var request = new CreateBookingRequest { ServiceId = 1, VehicleId = 3, ScheduledTime = scheduledTime };
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CreateBookingAsync(request, requester.CustomerID));
+
+      Assert.StartsWith("SLOT_NOT_AVAILABLE", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_WithinBaseCapacity_ShouldNotNeedPriorityBuffer()
+    {
+      using var dbContext = CreateDbContext();
+      SeedPriorityTiers(dbContext);
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa cơ bản", ServiceCategory = "Basic", Price = 50000, Duration = 20, Status = "Active" });
+      var requester = SeedCustomerWithVehicle(dbContext, 1, tierId: 1, phone: "0901111111", plate: "51A-000.01");
+
+      var scheduledTime = DateTime.UtcNow.AddHours(3);
+      await dbContext.SaveChangesAsync();
+
+      var service = CreateServiceWithPriorityBuffer(dbContext, maxParallelSlots: 2, priorityBufferSlots: 1);
+      var request = new CreateBookingRequest { ServiceId = 1, VehicleId = 1, ScheduledTime = scheduledTime };
+
+      var result = await service.CreateBookingAsync(request, requester.CustomerID);
+
+      Assert.True(result.BookingId > 0);
     }
   }
 }
