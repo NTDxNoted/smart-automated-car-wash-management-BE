@@ -125,6 +125,48 @@ namespace AutoWash.Tests.Application.Services
       Assert.Equal(30, result.Duration);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1000)]
+    public async Task UpdateServiceAsync_WithNonPositivePrice_ShouldThrow(int price)
+    {
+      using var dbContext = CreateDbContext();
+      var entity = new Service { ServiceName = "Old", ServiceCategory = "Basic", Description = "Old desc", Price = 50000m, Duration = 30, Status = "Active" };
+      dbContext.Services.Add(entity);
+      await dbContext.SaveChangesAsync();
+
+      var service = CreateService(dbContext);
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.UpdateServiceAsync(entity.ServiceID, new UpdateServiceRequest
+      {
+        Price = price
+      }));
+
+      Assert.StartsWith("INVALID_REQUEST", ex.Message);
+      Assert.Equal(50000m, entity.Price); // không bị thay đổi khi request không hợp lệ
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public async Task UpdateServiceAsync_WithNonPositiveDuration_ShouldThrow(int duration)
+    {
+      using var dbContext = CreateDbContext();
+      var entity = new Service { ServiceName = "Old", ServiceCategory = "Basic", Description = "Old desc", Price = 50000m, Duration = 30, Status = "Active" };
+      dbContext.Services.Add(entity);
+      await dbContext.SaveChangesAsync();
+
+      var service = CreateService(dbContext);
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.UpdateServiceAsync(entity.ServiceID, new UpdateServiceRequest
+      {
+        Duration = duration
+      }));
+
+      Assert.StartsWith("INVALID_REQUEST", ex.Message);
+      Assert.Equal(30, entity.Duration); // không bị thay đổi khi request không hợp lệ
+    }
+
     [Fact]
     public async Task UpdateServiceAsync_WithNonExistentService_ShouldThrow()
     {
