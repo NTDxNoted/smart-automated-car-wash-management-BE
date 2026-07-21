@@ -116,6 +116,9 @@ namespace AutoWash.Application.Services
             if (codeExists)
                 throw new ArgumentException("PROMO_CODE_EXISTS");
 
+            if (request.DiscountType == "Percentage" && request.DiscountValue > 100)
+                throw new ArgumentException("PROMO_INVALID_PERCENTAGE");
+
             var promo = new Promotion
             {
                 Title = request.Title.Trim(),
@@ -147,6 +150,9 @@ namespace AutoWash.Application.Services
 
             if (promo == null)
                 throw new KeyNotFoundException("PROMO_NOT_FOUND");
+
+            if (request.DiscountType == "Percentage" && request.DiscountValue > 100)
+                throw new ArgumentException("PROMO_INVALID_PERCENTAGE");
 
             promo.Title = request.Title.Trim();
             promo.MinTierID = request.MinTierID;
