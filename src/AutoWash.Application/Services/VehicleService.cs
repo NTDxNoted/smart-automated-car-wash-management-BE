@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using AutoWash.Application.Common.Validation;
 using AutoWash.Application.DTOs;
 using AutoWash.Application.Interfaces;
 using AutoWash.Domain.Entities;
@@ -40,6 +41,9 @@ namespace AutoWash.Application.Services
             var customer = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == customerId);
             if (customer == null) throw new Exception("NOT_FOUND: Không tìm thấy tài khoản.");
 
+            if (!LicensePlateValidator.IsValid(request.LicensePlate))
+                throw new Exception("INVALID_LICENSE_PLATE: Biển số xe không đúng định dạng chuẩn Việt Nam (VD: 30F-123.45, 51F12345).");
+
             // BR-10: verify OTP
             if (!_otpService.Verify(customer.Phone, request.OtpCode))
                 throw new Exception("INVALID_OTP: Mã OTP không hợp lệ hoặc đã hết hạn.");
@@ -71,6 +75,9 @@ namespace AutoWash.Application.Services
 
             var customer = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == customerId);
             if (customer == null) throw new Exception("NOT_FOUND: Không tìm thấy tài khoản.");
+
+            if (!LicensePlateValidator.IsValid(request.LicensePlate))
+                throw new Exception("INVALID_LICENSE_PLATE: Biển số xe không đúng định dạng chuẩn Việt Nam (VD: 30F-123.45, 51F12345).");
 
             // BR-10: verify OTP
             if (!_otpService.Verify(customer.Phone, request.OtpCode))
