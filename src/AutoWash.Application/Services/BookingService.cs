@@ -361,9 +361,20 @@ namespace AutoWash.Application.Services
                 if (customer != null && promotion.MinTierID.HasValue && customer.TierID < promotion.MinTierID.Value)
                     throw new Exception("PROMO_TIER_NOT_ELIGIBLE: Bạn chưa đủ tier để dùng mã này.");
 
-                var usedPromoCount = await _context.CustomerPromotions.CountAsync(cp => cp.PromotionID == promotion.PromotionID);
+                var usedPromoCount = await _context.Bookings
+                    .CountAsync(b => b.PromotionID == promotion.PromotionID && b.Status != BookingStatus.Cancelled);
                 if (promotion.MaxUsage.HasValue && usedPromoCount >= promotion.MaxUsage.Value)
                     throw new Exception("PROMO_USAGE_LIMIT: Mã khuyến mãi đã hết lượt dùng.");
+
+                if (customer != null)
+                {
+                    var customerUsedPromoCount = await _context.Bookings
+                        .CountAsync(b => b.CustomerID == customer.CustomerID
+                                       && b.PromotionID == promotion.PromotionID
+                                       && (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Completed));
+                    if (customerUsedPromoCount >= 1)
+                        throw new Exception("PROMO_USER_ALREADY_USED: Bạn đã sử dụng mã khuyến mãi này rồi.");
+                }
 
                 if (promotion.DiscountType == "Percentage")
                     promotionDiscount = Math.Round(baseAmount * (promotion.DiscountValue / 100m), 0);
