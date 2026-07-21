@@ -16,13 +16,17 @@ namespace AutoWash.Application.Services
         private readonly IApplicationDbContext _context;
         private readonly ILogger<AdminBookingService> _logger;
         private readonly IAdminNotifier? _adminNotifier;
+        private readonly ITierService? _tierService;
+        private readonly IPointService? _pointService;
 
-        // adminNotifier có default null để các unit test cũ (chỉ truyền context + logger) không phải sửa.
-        public AdminBookingService(IApplicationDbContext context, ILogger<AdminBookingService> logger, IAdminNotifier? adminNotifier = null)
+        // adminNotifier/tierService/pointService có default null để các unit test cũ (chỉ truyền context + logger) không phải sửa.
+        public AdminBookingService(IApplicationDbContext context, ILogger<AdminBookingService> logger, IAdminNotifier? adminNotifier = null, ITierService? tierService = null, IPointService? pointService = null)
         {
             _context = context;
             _logger = logger;
             _adminNotifier = adminNotifier;
+            _tierService = tierService;
+            _pointService = pointService;
         }
 
         public async Task<IEnumerable<AdminBookingListResponse>> GetAllBookingsAsync(string? status, string? date, string? phone, string? plate)
@@ -132,6 +136,27 @@ namespace AutoWash.Application.Services
             }
 
             await _context.SaveChangesAsync();
+
+            if (newStatus == BookingStatus.Completed && booking.CustomerID > 0)
+            {
+                var customer = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == booking.CustomerID);
+                if (customer != null)
+                {
+                    customer.TotalSpending += booking.FinalAmount;
+                    await _context.SaveChangesAsync();
+
+                    if (_tierService != null)
+                    {
+                        await _tierService.EvaluateUpgradeAsync(customer.CustomerID);
+                    }
+
+                    if (_pointService != null)
+                    {
+                        await _pointService.EarnPointsAsync(booking.BookingID);
+                    }
+                }
+            }
+
             _logger.LogInformation("Booking {BookingID} status updated from {OldStatus} to {NewStatus}", id, previousStatus, newStatus);
 
             // BR-33: Kích hoạt Notification (Mô phỏng qua Log) ngay sau khi thay đổi trạng thái
