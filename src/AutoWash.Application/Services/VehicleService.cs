@@ -44,19 +44,22 @@ namespace AutoWash.Application.Services
             if (!LicensePlateValidator.IsValid(request.LicensePlate))
                 throw new Exception("INVALID_LICENSE_PLATE: Biển số xe không đúng định dạng chuẩn Việt Nam (VD: 30F-123.45, 51F12345).");
 
+            // Chuẩn hóa giống BookingService để tránh trùng biển số do khác hoa/thường hoặc khoảng trắng.
+            var cleanPlate = request.LicensePlate.Trim().ToUpper();
+
             // BR-10: verify OTP
             if (!_otpService.Verify(customer.Phone, request.OtpCode))
                 throw new Exception("INVALID_OTP: Mã OTP không hợp lệ hoặc đã hết hạn.");
 
             // BR-09: UNIQUE (CustomerID, LicensePlate)
             var exists = await _context.Vehicles.AnyAsync(v =>
-                v.CustomerID == customerId && v.LicensePlate == request.LicensePlate && v.IsActive);
+                v.CustomerID == customerId && v.LicensePlate == cleanPlate && v.IsActive);
             if (exists) throw new Exception("PLATE_ALREADY_SAVED");
 
             var vehicle = new Vehicle
             {
                 CustomerID = customerId,
-                LicensePlate = request.LicensePlate,
+                LicensePlate = cleanPlate,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow
             };
@@ -79,17 +82,20 @@ namespace AutoWash.Application.Services
             if (!LicensePlateValidator.IsValid(request.LicensePlate))
                 throw new Exception("INVALID_LICENSE_PLATE: Biển số xe không đúng định dạng chuẩn Việt Nam (VD: 30F-123.45, 51F12345).");
 
+            // Chuẩn hóa giống BookingService để tránh trùng biển số do khác hoa/thường hoặc khoảng trắng.
+            var cleanPlate = request.LicensePlate.Trim().ToUpper();
+
             // BR-10: verify OTP
             if (!_otpService.Verify(customer.Phone, request.OtpCode))
                 throw new Exception("INVALID_OTP: Mã OTP không hợp lệ hoặc đã hết hạn.");
 
             // BR-09: check duplicate trong cùng tài khoản
             var duplicate = await _context.Vehicles.AnyAsync(v =>
-                v.CustomerID == customerId && v.LicensePlate == request.LicensePlate
+                v.CustomerID == customerId && v.LicensePlate == cleanPlate
                 && v.VehicleID != vehicleId && v.IsActive);
             if (duplicate) throw new Exception("PLATE_ALREADY_SAVED");
 
-            vehicle.LicensePlate = request.LicensePlate;
+            vehicle.LicensePlate = cleanPlate;
             await _context.SaveChangesAsync();
             return MapToResponse(vehicle);
         }
