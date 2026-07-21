@@ -1,3 +1,5 @@
+using System;
+using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using AutoWash.Application.Interfaces;
 using AutoWash.Domain.Entities;
@@ -9,6 +11,15 @@ namespace AutoWash.Infrastructure.Data
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
         {
+        }
+
+        public async Task AcquireBookingDateLockAsync(DateTime date)
+        {
+            if (Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) != true)
+                return;
+
+            var lockKey = "booking-slot-" + date.ToString("yyyy-MM-dd");
+            await Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtext({lockKey}))");
         }
 
         public DbSet<Tier> Tiers { get; set; }

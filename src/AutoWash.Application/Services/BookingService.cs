@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using AutoWash.Application.Common.Validation;
@@ -281,6 +282,19 @@ namespace AutoWash.Application.Services
             var newStart = request.ScheduledTime;
             var newEnd = newStart.AddMinutes(service.Duration + 5);
 
+            // TOCTOU: nếu 2 request đặt cùng slot đọc overlapCount đồng thời (trước khi request nào insert
+            // xong), cả hai có thể cùng pass check bên dưới và cùng insert, vượt MaxParallelSlots. Khóa
+            // advisory theo ngày (AcquireBookingDateLockAsync — chỉ có tác dụng trên Postgres) để chỉ 1
+            // request tạo booking cho ngày đó được xử lý tại một thời điểm; lock tự giải phóng khi
+            // transaction kết thúc (commit/rollback/dispose).
+            IDbContextTransaction? bookingTransaction = null;
+            if (_context is DbContext dbContextForLock)
+            {
+                bookingTransaction = await dbContextForLock.Database.BeginTransactionAsync();
+                await _context.AcquireBookingDateLockAsync(newStart.Date);
+            }
+            using var bookingTransactionScope = bookingTransaction;
+
             var activeBookings = await _context.Bookings
                 .Where(b => b.Status != BookingStatus.Cancelled && b.Status != BookingStatus.Failed)
                 .Where(b => b.ScheduledTime.Date == newStart.Date)
@@ -411,6 +425,11 @@ namespace AutoWash.Application.Services
 
             _context.Bookings.Add(booking);
             await _context.SaveChangesAsync();
+
+            if (bookingTransaction != null)
+            {
+                await bookingTransaction.CommitAsync();
+            }
 
             if (reward != null && loyalty != null)
             {

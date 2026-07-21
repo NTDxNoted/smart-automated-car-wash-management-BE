@@ -5,6 +5,7 @@ using AutoWash.Domain.Entities;
 using AutoWash.Domain.Enums;
 using AutoWash.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -16,8 +17,11 @@ namespace AutoWash.Tests.Application.Services
   {
     private static ApplicationDbContext CreateDbContext()
     {
+      // CreateBookingAsync dùng Database.BeginTransactionAsync() để khóa advisory chống race điều
+      // kiện slot; in-memory provider không hỗ trợ transaction thật nên phải ignore warning này.
       var options = new DbContextOptionsBuilder<ApplicationDbContext>()
           .UseInMemoryDatabase(Guid.NewGuid().ToString())
+          .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
           .Options;
 
       return new ApplicationDbContext(options);
