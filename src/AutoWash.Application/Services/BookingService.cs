@@ -376,10 +376,15 @@ namespace AutoWash.Application.Services
                         throw new Exception("PROMO_USER_ALREADY_USED: Bạn đã sử dụng mã khuyến mãi này rồi.");
                 }
 
-                if (promotion.DiscountType == "Percentage")
-                    promotionDiscount = Math.Round(baseAmount * (promotion.DiscountValue / 100m), 0);
-                else
-                    promotionDiscount = promotion.DiscountValue;
+                if (baseAmount < promotion.MinOrderValue)
+                    throw new Exception($"PROMO_MIN_ORDER_NOT_MET: Đơn hàng cần tối thiểu {promotion.MinOrderValue:N0}đ để dùng mã này.");
+
+                promotionDiscount = promotion.DiscountType == "Percentage"
+                    ? Math.Round(baseAmount * (promotion.DiscountValue / 100m), 0)
+                    : promotion.DiscountValue;
+
+                if (promotion.MaxDiscountAmount.HasValue)
+                    promotionDiscount = Math.Min(promotionDiscount, promotion.MaxDiscountAmount.Value);
             }
 
             decimal discountApplied = tierDiscount + rewardDiscount + promotionDiscount;
