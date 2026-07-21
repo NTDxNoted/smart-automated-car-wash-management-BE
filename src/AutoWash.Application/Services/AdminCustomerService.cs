@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -16,18 +17,22 @@ namespace AutoWash.Application.Services
             _context = context;
         }
 
-        // --- Hàm hỗ trợ tính toán Tier ---
-        private string DetermineTier(int totalPoints)
+        // Nguồn sự thật của tier là Customer.TierID + bảng Tiers (do TierService duy trì theo
+        // BR-21/22 dựa trên TotalSpending) — không được tự tính lại tier từ điểm loyalty ở đây,
+        // vì sẽ cho ra kết quả khác với tier thật dùng để tính quyền đặt lịch/giảm giá của khách.
+        private async Task<Dictionary<int, string>> GetTierNamesAsync()
         {
-            if (totalPoints >= 5000) return "Platinum";
-            if (totalPoints >= 2000) return "Gold";
-            if (totalPoints >= 500) return "Silver";
-            return "Member";
+            return await _context.Tiers.ToDictionaryAsync(t => t.TierID, t => t.TierName);
         }
+
+        private static string ResolveTierName(Dictionary<int, string> tierNames, int tierId) =>
+            tierNames.TryGetValue(tierId, out var name) ? name : "Member";
 
         // --- TASK 1: LẤY DANH SÁCH ---
         public async Task<PagedResponse<CustomerAdminResponseDto>> GetCustomersAsync(string? tier, bool? isLocked, int page, int pageSize)
         {
+            var tierNames = await GetTierNamesAsync();
+
             var query = _context.Customers
                 .Include(c => c.LoyaltyAccount) // Nhớ Include để lấy TotalPoints
                 .AsQueryable();
@@ -44,7 +49,7 @@ namespace AutoWash.Application.Services
             if (!string.IsNullOrEmpty(tier))
             {
                 accounts = accounts.Where(c =>
-                    (c.LoyaltyAccount != null ? DetermineTier(c.LoyaltyAccount.TotalPoints) : "Member").ToLower() == tier.ToLower()
+                    ResolveTierName(tierNames, c.TierID).ToLower() == tier.ToLower()
                 ).ToList();
             }
 
@@ -58,7 +63,7 @@ namespace AutoWash.Application.Services
                     CustomerId = c.CustomerID,
                     FullName = c.FullName,
                     Phone = c.Phone,
-                    Tier = c.LoyaltyAccount != null ? DetermineTier(c.LoyaltyAccount.TotalPoints) : "Member",
+                    Tier = ResolveTierName(tierNames, c.TierID),
                     Points = c.LoyaltyAccount?.TotalPoints ?? 0,
                     TotalSpending = c.TotalSpending,
                     IsLocked = c.IsLocked,
@@ -87,6 +92,8 @@ namespace AutoWash.Application.Services
             if (customer == null)
                 throw new Exception("NOT_FOUND: Không tìm thấy hồ sơ khách hàng.");
 
+            var tierNames = await GetTierNamesAsync();
+
             var bookings = customer.Bookings.OrderByDescending(b => b.ScheduledTime).ToList();
             var serviceIds = bookings.Select(b => b.ServiceID).Distinct().ToList();
             var services = await _context.Services
@@ -98,7 +105,7 @@ namespace AutoWash.Application.Services
                 CustomerId = customer.CustomerID,
                 FullName = customer.FullName,
                 Phone = customer.Phone,
-                Tier = customer.LoyaltyAccount != null ? DetermineTier(customer.LoyaltyAccount.TotalPoints) : "Member",
+                Tier = ResolveTierName(tierNames, customer.TierID),
                 Points = customer.LoyaltyAccount?.TotalPoints ?? 0,
                 TotalSpending = customer.TotalSpending,
                 IsLocked = customer.IsLocked,

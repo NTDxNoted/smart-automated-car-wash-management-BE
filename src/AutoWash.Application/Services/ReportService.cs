@@ -137,13 +137,12 @@ namespace AutoWash.Application.Services
 
     public async Task<IReadOnlyList<TierDistributionResponse>> GetTierDistributionAsync()
     {
-      var customers = await _context.Customers
-          .Include(c => c.LoyaltyAccount)
-          .ToListAsync();
+      var customers = await _context.Customers.ToListAsync();
+      var tierNames = await _context.Tiers.ToDictionaryAsync(t => t.TierID, t => t.TierName);
 
       var totalCustomers = customers.Count;
       var distribution = customers
-          .GroupBy(c => DetermineTier(c.LoyaltyAccount?.TotalPoints ?? 0))
+          .GroupBy(c => tierNames.TryGetValue(c.TierID, out var name) ? name : "Member")
           .Select(g => new TierDistributionResponse
           {
             Tier = g.Key,
@@ -300,14 +299,6 @@ namespace AutoWash.Application.Services
         TotalPromotions = items.Count,
         Items = items
       };
-    }
-
-    private static string DetermineTier(int totalPoints)
-    {
-      if (totalPoints >= 5000) return "Platinum";
-      if (totalPoints >= 2000) return "Gold";
-      if (totalPoints >= 500) return "Silver";
-      return "Member";
     }
   }
 }
