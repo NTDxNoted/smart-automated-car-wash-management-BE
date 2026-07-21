@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using AutoWash.Application.Common.Validation;
@@ -281,6 +282,19 @@ namespace AutoWash.Application.Services
             var newStart = request.ScheduledTime;
             var newEnd = newStart.AddMinutes(service.Duration + 5);
 
+            // TOCTOU: nếu 2 request đặt cùng slot đọc overlapCount đồng thời (trước khi request nào insert
+            // xong), cả hai có thể cùng pass check bên dưới và cùng insert, vượt MaxParallelSlots. Khóa
+            // advisory theo ngày (AcquireBookingDateLockAsync — chỉ có tác dụng trên Postgres) để chỉ 1
+            // request tạo booking cho ngày đó được xử lý tại một thời điểm; lock tự giải phóng khi
+            // transaction kết thúc (commit/rollback/dispose).
+            IDbContextTransaction? bookingTransaction = null;
+            if (_context is DbContext dbContextForLock)
+            {
+                bookingTransaction = await dbContextForLock.Database.BeginTransactionAsync();
+                await _context.AcquireBookingDateLockAsync(newStart.Date);
+            }
+            using var bookingTransactionScope = bookingTransaction;
+
             var activeBookings = await _context.Bookings
                 .Where(b => b.Status != BookingStatus.Cancelled && b.Status != BookingStatus.Failed)
                 .Where(b => b.ScheduledTime.Date == newStart.Date)
@@ -361,14 +375,30 @@ namespace AutoWash.Application.Services
                 if (customer != null && promotion.MinTierID.HasValue && customer.TierID < promotion.MinTierID.Value)
                     throw new Exception("PROMO_TIER_NOT_ELIGIBLE: Bạn chưa đủ tier để dùng mã này.");
 
-                var usedPromoCount = await _context.CustomerPromotions.CountAsync(cp => cp.PromotionID == promotion.PromotionID);
+                var usedPromoCount = await _context.Bookings
+                    .CountAsync(b => b.PromotionID == promotion.PromotionID && b.Status != BookingStatus.Cancelled);
                 if (promotion.MaxUsage.HasValue && usedPromoCount >= promotion.MaxUsage.Value)
                     throw new Exception("PROMO_USAGE_LIMIT: Mã khuyến mãi đã hết lượt dùng.");
 
-                if (promotion.DiscountType == "Percentage")
-                    promotionDiscount = Math.Round(baseAmount * (promotion.DiscountValue / 100m), 0);
-                else
-                    promotionDiscount = promotion.DiscountValue;
+                if (customer != null)
+                {
+                    var customerUsedPromoCount = await _context.Bookings
+                        .CountAsync(b => b.CustomerID == customer.CustomerID
+                                       && b.PromotionID == promotion.PromotionID
+                                       && (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Completed));
+                    if (customerUsedPromoCount >= 1)
+                        throw new Exception("PROMO_USER_ALREADY_USED: Bạn đã sử dụng mã khuyến mãi này rồi.");
+                }
+
+                if (baseAmount < promotion.MinOrderValue)
+                    throw new Exception($"PROMO_MIN_ORDER_NOT_MET: Đơn hàng cần tối thiểu {promotion.MinOrderValue:N0}đ để dùng mã này.");
+
+                promotionDiscount = promotion.DiscountType == "Percentage"
+                    ? Math.Round(baseAmount * (promotion.DiscountValue / 100m), 0)
+                    : promotion.DiscountValue;
+
+                if (promotion.MaxDiscountAmount.HasValue)
+                    promotionDiscount = Math.Min(promotionDiscount, promotion.MaxDiscountAmount.Value);
             }
 
             decimal discountApplied = tierDiscount + rewardDiscount + promotionDiscount;
@@ -395,6 +425,11 @@ namespace AutoWash.Application.Services
 
             _context.Bookings.Add(booking);
             await _context.SaveChangesAsync();
+
+            if (bookingTransaction != null)
+            {
+                await bookingTransaction.CommitAsync();
+            }
 
             if (reward != null && loyalty != null)
             {
@@ -730,6 +765,7 @@ namespace AutoWash.Application.Services
         public async Task<IEnumerable<AvailableSlotResponse>> GetAvailableSlotsAsync(int? customerId, string? dateStr, string? licensePlate)
         {
             var windowDays = 7;
+            bool isPriorityEligible = false;
             if (customerId.HasValue && customerId.Value > 0)
             {
                 var customer = await _context.Customers
@@ -740,6 +776,11 @@ namespace AutoWash.Application.Services
                     if (tier != null)
                     {
                         windowDays = tier.BookingWindowDays;
+
+                        // BR-19: giữ nhất quán với CreateBookingAsync — khách hạng cao hơn mức thấp nhất
+                        // vẫn được tính thêm buffer ưu tiên khi xét slot còn trống.
+                        var basePriorityScore = await _context.Tiers.MinAsync(t => (int?)t.PriorityScore) ?? 1;
+                        isPriorityEligible = tier.PriorityScore > basePriorityScore;
                     }
                 }
             }
@@ -832,8 +873,11 @@ namespace AutoWash.Application.Services
                             }
                         }
 
-                        availableCount = Math.Max(0, maxParallelSlots - overlapCount);
-                        if (overlapCount >= maxParallelSlots || isLicensePlateViolated)
+                        int priorityBuffer = _bookingSettings.PriorityBufferSlots > 0 ? _bookingSettings.PriorityBufferSlots : 0;
+                        int effectiveCap = maxParallelSlots + (isPriorityEligible ? priorityBuffer : 0);
+
+                        availableCount = Math.Max(0, effectiveCap - overlapCount);
+                        if (overlapCount >= effectiveCap || isLicensePlateViolated)
                         {
                             isAvailable = false;
                             availableCount = 0;

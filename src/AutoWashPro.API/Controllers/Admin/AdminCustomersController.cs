@@ -33,8 +33,7 @@ namespace AutoWashPro.API.Controllers
             {
                 return BadRequest(new
                 {
-                    message = ex.Message,
-                    stackTrace = ex.StackTrace
+                    message = ex.Message
                 });
             }
         }

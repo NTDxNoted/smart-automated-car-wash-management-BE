@@ -73,20 +73,23 @@ namespace AutoWash.Application.Services
             var memberTier = await _context.Tiers.FirstOrDefaultAsync(t => t.TierID == 1);
             if (memberTier == null) return;
 
+            // Tiers sắp theo MinSpending giảm dần: tier đủ điều kiện cao nhất luôn là match đầu tiên.
+            var tiers = await _context.Tiers.OrderByDescending(t => t.MinSpending).ToListAsync();
+
+            // Gộp thành 1 query group-by thay vì query riêng từng khách (tránh N+1 khi chạy batch).
+            var spendingByCustomer = await _context.Bookings
+                .Where(b => b.Status == BookingStatus.Completed && b.CompletedAt >= cutoff)
+                .GroupBy(b => b.CustomerID)
+                .Select(g => new { CustomerID = g.Key, Total = g.Sum(b => b.FinalAmount) })
+                .ToDictionaryAsync(x => x.CustomerID, x => x.Total);
+
             var customers = await _context.Customers.ToListAsync();
 
             foreach (var customer in customers)
             {
-                var recentSpending = await _context.Bookings
-                    .Where(b => b.CustomerID == customer.CustomerID
-                             && b.Status == BookingStatus.Completed
-                             && b.CompletedAt >= cutoff)
-                    .SumAsync(b => (decimal?)b.FinalAmount) ?? 0;
+                var recentSpending = spendingByCustomer.TryGetValue(customer.CustomerID, out var total) ? total : 0;
 
-                var eligibleTier = await _context.Tiers
-                    .Where(t => t.MinSpending <= recentSpending)
-                    .OrderByDescending(t => t.MinSpending)
-                    .FirstOrDefaultAsync() ?? memberTier;
+                var eligibleTier = tiers.FirstOrDefault(t => t.MinSpending <= recentSpending) ?? memberTier;
 
                 // Không downgrade dưới Member (TierID=1), không upgrade
                 if (eligibleTier.TierID >= customer.TierID) continue;

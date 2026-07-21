@@ -5,6 +5,7 @@ using AutoWash.Domain.Entities;
 using AutoWash.Domain.Enums;
 using AutoWash.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -16,8 +17,11 @@ namespace AutoWash.Tests.Application.Services
   {
     private static ApplicationDbContext CreateDbContext()
     {
+      // CreateBookingAsync dùng Database.BeginTransactionAsync() để khóa advisory chống race điều
+      // kiện slot; in-memory provider không hỗ trợ transaction thật nên phải ignore warning này.
       var options = new DbContextOptionsBuilder<ApplicationDbContext>()
           .UseInMemoryDatabase(Guid.NewGuid().ToString())
+          .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
           .Options;
 
       return new ApplicationDbContext(options);
@@ -528,6 +532,48 @@ namespace AutoWash.Tests.Application.Services
       var slots = (await service.GetAvailableSlotsAsync(customer.CustomerID, null, null)).ToList();
 
       Assert.Equal(2, slots.Count); // BookingWindowDays = 2, không phải mặc định 7 của Guest
+    }
+
+    [Fact]
+    public async Task GetAvailableSlotsAsync_WhenSlotFullButCustomerIsHigherTier_ShouldStillShowAvailableViaPriorityBuffer()
+    {
+      using var dbContext = CreateDbContext();
+      SeedPriorityTiers(dbContext);
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa cơ bản", ServiceCategory = "Basic", Price = 50000, Duration = 20, Status = "Active" });
+      var occupant = SeedCustomerWithVehicle(dbContext, 1, tierId: 1, phone: "0901111111", plate: "51A-000.01");
+      var requester = SeedCustomerWithVehicle(dbContext, 2, tierId: 2, phone: "0901111112", plate: "51A-000.02"); // Silver > Member
+
+      var targetLocalDate = DateTime.UtcNow.AddHours(7).Date.AddDays(1);
+      var bookedLocalTime = targetLocalDate.AddHours(14).AddMinutes(30); // 14:30 giờ VN, khớp lưới slot :30
+      var bookedUtc = bookedLocalTime.AddHours(-7);
+
+      dbContext.Bookings.Add(new Booking
+      {
+        CustomerID = occupant.CustomerID,
+        Phone = occupant.Phone,
+        VehicleID = 1,
+        LicensePlate = "51A-000.01",
+        ServiceID = 1,
+        ScheduledTime = bookedUtc,
+        Status = BookingStatus.Pending,
+        FinalAmount = 50000m,
+        CreatedAt = DateTime.UtcNow
+      });
+      await dbContext.SaveChangesAsync();
+
+      var service = CreateServiceWithPriorityBuffer(dbContext, maxParallelSlots: 1, priorityBufferSlots: 1);
+
+      // Khách Member thường (không ưu tiên) thấy slot 14:30 đã đầy — khớp với CreateBookingAsync.
+      var baseTierSlots = (await service.GetAvailableSlotsAsync(occupant.CustomerID, targetLocalDate.ToString("yyyy-MM-dd"), null)).ToList();
+      var baseTierSlot = Assert.Single(baseTierSlots).Slots.Single(s => s.Time == "14:30");
+      Assert.False(baseTierSlot.IsAvailable);
+
+      // Khách Silver (ưu tiên) vẫn được tính vào buffer ưu tiên nên slot phải hiện available,
+      // khớp với việc CreateBookingAsync thực sự cho phép khách này đặt slot đó.
+      var higherTierSlots = (await service.GetAvailableSlotsAsync(requester.CustomerID, targetLocalDate.ToString("yyyy-MM-dd"), null)).ToList();
+      var higherTierSlot = Assert.Single(higherTierSlots).Slots.Single(s => s.Time == "14:30");
+      Assert.True(higherTierSlot.IsAvailable);
+      Assert.Equal(1, higherTierSlot.AvailableCount);
     }
 
     [Fact]

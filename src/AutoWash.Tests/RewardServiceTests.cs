@@ -135,6 +135,27 @@ namespace AutoWash.Tests.Application.Services
       Assert.Equal(50, result.PointsRequired);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-100)]
+    public async Task UpdateRewardAsync_WithNonPositivePointsRequired_ShouldThrow(int pointsRequired)
+    {
+      using var dbContext = CreateDbContext();
+      var reward = new RewardsCatalog { RewardName = "Reward", Description = "d", PointsRequired = 50, DiscountAmount = 10000m, IsActive = true };
+      dbContext.RewardsCatalog.Add(reward);
+      await dbContext.SaveChangesAsync();
+
+      var service = CreateService(dbContext);
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.UpdateRewardAsync(reward.RewardID, new UpdateRewardRequest
+      {
+        PointsRequired = pointsRequired
+      }));
+
+      Assert.StartsWith("INVALID_REQUEST", ex.Message);
+      Assert.Equal(50, reward.PointsRequired); // không bị thay đổi khi request không hợp lệ
+    }
+
     [Fact]
     public async Task UpdateRewardAsync_WithNonExistentReward_ShouldThrow()
     {

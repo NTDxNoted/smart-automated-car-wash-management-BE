@@ -78,6 +78,9 @@ namespace AutoWash.Application.Services
             if (request.DiscountType != null && !ValidDiscountTypes.Contains(request.DiscountType))
                 throw new Exception("INVALID_REQUEST: DiscountType phải là 'Fixed_Amount' hoặc 'Percentage'.");
 
+            if (request.PointsRequired.HasValue && request.PointsRequired.Value <= 0)
+                throw new Exception("INVALID_REQUEST: PointsRequired phải lớn hơn 0.");
+
             if (request.RewardName != null) reward.RewardName = request.RewardName;
             if (request.Description != null) reward.Description = request.Description;
             if (request.PointsRequired.HasValue) reward.PointsRequired = request.PointsRequired.Value;
