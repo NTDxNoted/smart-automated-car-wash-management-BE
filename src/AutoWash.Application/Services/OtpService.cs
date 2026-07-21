@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using AutoWash.Application.Interfaces;
 
@@ -18,7 +19,7 @@ namespace AutoWash.Application.Services
 
         public string GenerateAndStore(string phone)
         {
-            var otp = new Random().Next(100000, 999999).ToString();
+            var otp = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
             _store[phone] = (otp, DateTime.UtcNow.AddMinutes(5));
             _logger.LogInformation("[OTP-SIM] Phone={Phone} OTP={OTP} ExpiresAt={ExpiresAt}", phone, otp, DateTime.UtcNow.AddMinutes(5));
             return otp;
