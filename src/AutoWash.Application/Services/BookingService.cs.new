@@ -204,7 +204,7 @@ namespace AutoWash.Application.Services
 
             var sameDayCount = await _context.Bookings.CountAsync(b =>
                 b.ScheduledTime.Date == request.ScheduledTime.Date &&
-                b.Status != BookingStatus.Cancelled &&
+                b.Status == BookingStatus.Pending &&
                 (
                     customerId.HasValue
                         ? b.CustomerID == customerId.Value

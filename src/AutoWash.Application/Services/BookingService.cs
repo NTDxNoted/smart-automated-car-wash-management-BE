@@ -239,7 +239,7 @@ namespace AutoWash.Application.Services
 
             var sameDayCount = await _context.Bookings.CountAsync(b =>
                 b.ScheduledTime.Date == request.ScheduledTime.Date &&
-                b.Status != BookingStatus.Cancelled &&
+                b.Status == BookingStatus.Pending &&
                 (
                     customerId.HasValue
                         ? b.CustomerID == customerId.Value
@@ -467,27 +467,27 @@ namespace AutoWash.Application.Services
             var total = await query.CountAsync();
 
             var bookings = await (from b in query
-                join s in _context.Services on b.ServiceID equals s.ServiceID into sj
-                from svc in sj.DefaultIfEmpty()
-                orderby b.ScheduledTime descending
-                select new BookingResponseDto
-                {
-                    BookingId = b.BookingID,
-                    LicensePlate = b.LicensePlate,
-                    ScheduledTime = b.ScheduledTime,
-                    Status = b.Status.ToString(),
-                    FinalAmount = b.FinalAmount,
-                    PointsEarned = b.PointsEarned,
-                    Service = svc == null ? new ServiceResponse() : new ServiceResponse
-                    {
-                        ServiceId = svc.ServiceID,
-                        ServiceName = svc.ServiceName,
-                        Price = svc.Price,
-                        Duration = svc.Duration,
-                        Description = svc.Description,
-                        Status = svc.Status,
-                    },
-                })
+                                  join s in _context.Services on b.ServiceID equals s.ServiceID into sj
+                                  from svc in sj.DefaultIfEmpty()
+                                  orderby b.ScheduledTime descending
+                                  select new BookingResponseDto
+                                  {
+                                      BookingId = b.BookingID,
+                                      LicensePlate = b.LicensePlate,
+                                      ScheduledTime = b.ScheduledTime,
+                                      Status = b.Status.ToString(),
+                                      FinalAmount = b.FinalAmount,
+                                      PointsEarned = b.PointsEarned,
+                                      Service = svc == null ? new ServiceResponse() : new ServiceResponse
+                                      {
+                                          ServiceId = svc.ServiceID,
+                                          ServiceName = svc.ServiceName,
+                                          Price = svc.Price,
+                                          Duration = svc.Duration,
+                                          Description = svc.Description,
+                                          Status = svc.Status,
+                                      },
+                                  })
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
