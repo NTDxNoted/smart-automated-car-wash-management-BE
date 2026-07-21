@@ -805,7 +805,12 @@ namespace AutoWash.Application.Services
 
                         foreach (var b in activeBookings)
                         {
-                            var bStartLocal = b.ScheduledTime;
+                            // BUG FIX: b.ScheduledTime được lưu dưới dạng UTC (giống mọi nơi khác
+                            // trong hệ thống), nhưng biến này bị gắn nhãn "Local" mà không cộng offset
+                            // +7h — khiến so sánh với slotLocal (giờ VN thật) bị lệch 7 tiếng, làm slot
+                            // đã đặt hiển thị nhầm là còn trống (và một slot khác, không ai đặt, lại bị
+                            // đánh dấu nhầm là đầy).
+                            var bStartLocal = b.ScheduledTime.AddHours(7);
                             var bEndLocal = bStartLocal.AddMinutes(b.Duration + 5);
 
                             // Overlap
