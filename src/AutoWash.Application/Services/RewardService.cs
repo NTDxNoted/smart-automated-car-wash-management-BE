@@ -53,13 +53,21 @@ namespace AutoWash.Application.Services
             if (!string.IsNullOrWhiteSpace(request.DiscountType) && !ValidDiscountTypes.Contains(request.DiscountType))
                 throw new Exception("INVALID_REQUEST: DiscountType phải là 'Fixed_Amount' hoặc 'Percentage'.");
 
+            var discountType = string.IsNullOrWhiteSpace(request.DiscountType) ? "Fixed_Amount" : request.DiscountType;
+
+            if (request.DiscountAmount <= 0)
+                throw new Exception("INVALID_REQUEST: DiscountAmount phải lớn hơn 0.");
+
+            if (discountType.Equals("Percentage", StringComparison.OrdinalIgnoreCase) && request.DiscountAmount > 100)
+                throw new Exception("INVALID_REQUEST: DiscountAmount theo % không được vượt quá 100.");
+
             var reward = new RewardsCatalog
             {
                 RewardName = request.RewardName,
                 Description = request.Description,
                 PointsRequired = request.PointsRequired,
                 DiscountAmount = request.DiscountAmount,
-                DiscountType = string.IsNullOrWhiteSpace(request.DiscountType) ? "Fixed_Amount" : request.DiscountType,
+                DiscountType = discountType,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow
             };
@@ -80,6 +88,15 @@ namespace AutoWash.Application.Services
 
             if (request.PointsRequired.HasValue && request.PointsRequired.Value <= 0)
                 throw new Exception("INVALID_REQUEST: PointsRequired phải lớn hơn 0.");
+
+            if (request.DiscountAmount.HasValue && request.DiscountAmount.Value <= 0)
+                throw new Exception("INVALID_REQUEST: DiscountAmount phải lớn hơn 0.");
+
+            var effectiveDiscountType = request.DiscountType ?? reward.DiscountType;
+            var effectiveDiscountAmount = request.DiscountAmount ?? reward.DiscountAmount;
+
+            if (effectiveDiscountType.Equals("Percentage", StringComparison.OrdinalIgnoreCase) && effectiveDiscountAmount > 100)
+                throw new Exception("INVALID_REQUEST: DiscountAmount theo % không được vượt quá 100.");
 
             if (request.RewardName != null) reward.RewardName = request.RewardName;
             if (request.Description != null) reward.Description = request.Description;

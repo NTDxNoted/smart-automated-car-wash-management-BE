@@ -25,6 +25,7 @@ namespace AutoWash.Application.Services
 
             var query = _context.Customers
                 .Include(c => c.LoyaltyAccount) // Nhớ Include để lấy TotalPoints
+                .Where(c => c.Role != "ADMIN") // Bảng Customers dùng chung cho cả Admin (AdminAuthService) — không lộ tài khoản Admin qua API quản lý khách hàng
                 .AsQueryable();
 
             if (isLocked.HasValue)
@@ -80,7 +81,7 @@ namespace AutoWash.Application.Services
                 .Include(c => c.Bookings)
                 .FirstOrDefaultAsync(c => c.CustomerID == customerId);
 
-            if (customer == null)
+            if (customer == null || customer.Role == "ADMIN")
                 throw new Exception("NOT_FOUND: Không tìm thấy hồ sơ khách hàng.");
 
             var tierName = await _context.Tiers
@@ -132,6 +133,9 @@ namespace AutoWash.Application.Services
 
             if (customer == null)
                 throw new Exception("NOT_FOUND: Không tìm thấy khách hàng để thao tác.");
+
+            if (customer.Role == "ADMIN")
+                throw new Exception("FORBIDDEN: Không thể khóa/mở khóa tài khoản Admin qua API quản lý khách hàng.");
 
             customer.IsLocked = !customer.IsLocked;
             await _context.SaveChangesAsync();
