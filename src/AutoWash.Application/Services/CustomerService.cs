@@ -22,12 +22,19 @@ namespace AutoWash.Application.Services
 
             var loyalty = await _context.LoyaltyAccounts.FirstOrDefaultAsync(l => l.CustomerID == customerId);
 
+            // Customer.Tier là [NotMapped] (luôn "1" sau khi load lại từ DB) — TierID mới là
+            // nguồn sự thật, phải resolve tên qua bảng Tiers giống AuthService.
+            var tierName = await _context.Tiers
+                .Where(t => t.TierID == customer.TierID)
+                .Select(t => t.TierName)
+                .FirstOrDefaultAsync();
+
             return new ProfileResponse
             {
                 CustomerId = customer.CustomerID,
                 FullName = customer.FullName,
                 Phone = customer.Phone,
-                Tier = customer.Tier,
+                Tier = tierName ?? (customer.TierID == 1 ? "Member" : customer.TierID.ToString()),
                 TotalSpending = customer.TotalSpending,
                 LoyaltyPoints = loyalty?.TotalPoints ?? 0,
                 LastVisit = customer.LastVisit,
