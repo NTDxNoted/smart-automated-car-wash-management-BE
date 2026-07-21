@@ -746,6 +746,7 @@ namespace AutoWash.Application.Services
         public async Task<IEnumerable<AvailableSlotResponse>> GetAvailableSlotsAsync(int? customerId, string? dateStr, string? licensePlate)
         {
             var windowDays = 7;
+            bool isPriorityEligible = false;
             if (customerId.HasValue && customerId.Value > 0)
             {
                 var customer = await _context.Customers
@@ -756,6 +757,11 @@ namespace AutoWash.Application.Services
                     if (tier != null)
                     {
                         windowDays = tier.BookingWindowDays;
+
+                        // BR-19: giữ nhất quán với CreateBookingAsync — khách hạng cao hơn mức thấp nhất
+                        // vẫn được tính thêm buffer ưu tiên khi xét slot còn trống.
+                        var basePriorityScore = await _context.Tiers.MinAsync(t => (int?)t.PriorityScore) ?? 1;
+                        isPriorityEligible = tier.PriorityScore > basePriorityScore;
                     }
                 }
             }
@@ -848,8 +854,11 @@ namespace AutoWash.Application.Services
                             }
                         }
 
-                        availableCount = Math.Max(0, maxParallelSlots - overlapCount);
-                        if (overlapCount >= maxParallelSlots || isLicensePlateViolated)
+                        int priorityBuffer = _bookingSettings.PriorityBufferSlots > 0 ? _bookingSettings.PriorityBufferSlots : 0;
+                        int effectiveCap = maxParallelSlots + (isPriorityEligible ? priorityBuffer : 0);
+
+                        availableCount = Math.Max(0, effectiveCap - overlapCount);
+                        if (overlapCount >= effectiveCap || isLicensePlateViolated)
                         {
                             isAvailable = false;
                             availableCount = 0;
