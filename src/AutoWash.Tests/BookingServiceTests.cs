@@ -296,5 +296,222 @@ namespace AutoWash.Tests.Application.Services
       Assert.True(result.BookingId > 0);
       Assert.Equal("Pending", result.Status);
     }
+
+    private static Booking SeedBookingForActions(ApplicationDbContext dbContext, BookingStatus status, DateTime scheduledTime, int customerId = 1, string phone = "0901111111", int pointsRedeemed = 0)
+    {
+      var booking = new Booking
+      {
+        CustomerID = customerId,
+        Phone = phone,
+        VehicleID = 1,
+        LicensePlate = "51A-000.11",
+        ServiceID = 1,
+        ScheduledTime = scheduledTime,
+        Status = status,
+        FinalAmount = 100000m,
+        PointsRedeemed = pointsRedeemed,
+        CreatedAt = DateTime.UtcNow
+      };
+      dbContext.Bookings.Add(booking);
+      dbContext.SaveChanges();
+      return booking;
+    }
+
+    [Fact]
+    public async Task GetBookingByIdAsync_AsOwner_ShouldReturnBooking()
+    {
+      using var dbContext = CreateDbContext();
+      var booking = SeedBookingForActions(dbContext, BookingStatus.Pending, DateTime.UtcNow.AddHours(3), customerId: 1);
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var result = await service.GetBookingByIdAsync(booking.BookingID, customerId: 1, guestPhone: null);
+
+      Assert.Equal(booking.BookingID, result.BookingId);
+    }
+
+    [Fact]
+    public async Task GetBookingByIdAsync_AsOtherCustomer_ShouldThrowUnauthorized()
+    {
+      using var dbContext = CreateDbContext();
+      var booking = SeedBookingForActions(dbContext, BookingStatus.Pending, DateTime.UtcNow.AddHours(3), customerId: 1);
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.GetBookingByIdAsync(booking.BookingID, customerId: 2, guestPhone: null));
+
+      Assert.StartsWith("UNAUTHORIZED", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetBookingByIdAsync_AsGuestWithWrongPhone_ShouldThrowUnauthorized()
+    {
+      using var dbContext = CreateDbContext();
+      var booking = SeedBookingForActions(dbContext, BookingStatus.Pending, DateTime.UtcNow.AddHours(3), customerId: 0, phone: "0901111111");
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.GetBookingByIdAsync(booking.BookingID, customerId: null, guestPhone: "0999999999"));
+
+      Assert.StartsWith("UNAUTHORIZED", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetBookingByIdAsync_WithNonExistentBooking_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.GetBookingByIdAsync(999, customerId: 1, guestPhone: null));
+
+      Assert.StartsWith("NOT_FOUND", ex.Message);
+    }
+
+    [Fact]
+    public async Task CancelBookingAsync_MoreThan2HoursBefore_ShouldCancelAndRefundPoints()
+    {
+      using var dbContext = CreateDbContext();
+      var customer = new Customer { CustomerID = 1, FullName = "Test", Phone = "0901111111", Password = "pw", CreatedAt = DateTime.UtcNow };
+      dbContext.Customers.Add(customer);
+      dbContext.LoyaltyAccounts.Add(new LoyaltyAccount { CustomerID = 1, TotalPoints = 10, LastUpdated = DateTime.UtcNow });
+      await dbContext.SaveChangesAsync();
+      var booking = SeedBookingForActions(dbContext, BookingStatus.Pending, DateTime.UtcNow.AddHours(3), customerId: 1, pointsRedeemed: 20);
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var result = await service.CancelBookingAsync(booking.BookingID, customerId: 1, guestPhone: null);
+
+      Assert.Equal("Cancelled", result.Status);
+      Assert.Equal(20, result.PointsRefunded);
+
+      var persistedLoyalty = await dbContext.LoyaltyAccounts.FirstAsync(l => l.CustomerID == 1);
+      Assert.Equal(30, persistedLoyalty.TotalPoints);
+    }
+
+    [Fact]
+    public async Task CancelBookingAsync_LessThan2HoursBefore_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      var booking = SeedBookingForActions(dbContext, BookingStatus.Pending, DateTime.UtcNow.AddMinutes(90), customerId: 1);
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CancelBookingAsync(booking.BookingID, customerId: 1, guestPhone: null));
+
+      Assert.StartsWith("CANCEL_TOO_LATE", ex.Message);
+    }
+
+    [Fact]
+    public async Task CancelBookingAsync_WithNonPendingBooking_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      var booking = SeedBookingForActions(dbContext, BookingStatus.Completed, DateTime.UtcNow.AddHours(3), customerId: 1);
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CancelBookingAsync(booking.BookingID, customerId: 1, guestPhone: null));
+
+      Assert.StartsWith("INVALID_STATUS", ex.Message);
+    }
+
+    [Fact]
+    public async Task CancelBookingAsync_ByWrongCustomer_ShouldThrowUnauthorized()
+    {
+      using var dbContext = CreateDbContext();
+      var booking = SeedBookingForActions(dbContext, BookingStatus.Pending, DateTime.UtcNow.AddHours(3), customerId: 1);
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CancelBookingAsync(booking.BookingID, customerId: 2, guestPhone: null));
+
+      Assert.StartsWith("UNAUTHORIZED", ex.Message);
+    }
+
+    [Fact]
+    public async Task CompleteBookingAsync_ShouldMarkCompletedAndUpdateSpendingAndEvaluateTierUpgrade()
+    {
+      using var dbContext = CreateDbContext();
+      var customer = new Customer { CustomerID = 1, FullName = "Test", Phone = "0901111111", Password = "pw", TotalSpending = 0m, CreatedAt = DateTime.UtcNow };
+      dbContext.Customers.Add(customer);
+      await dbContext.SaveChangesAsync();
+      var booking = SeedBookingForActions(dbContext, BookingStatus.Pending, DateTime.UtcNow.AddHours(-1), customerId: 1);
+
+      var tierServiceMock = new Mock<ITierService>();
+      tierServiceMock.Setup(t => t.EvaluateUpgradeAsync(1)).Returns(Task.CompletedTask);
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), tierServiceMock.Object);
+
+      var result = await service.CompleteBookingAsync(booking.BookingID);
+
+      Assert.Equal("Completed", result.Status);
+      var persistedCustomer = await dbContext.Customers.FirstAsync(c => c.CustomerID == 1);
+      Assert.Equal(100000m, persistedCustomer.TotalSpending);
+      tierServiceMock.Verify(t => t.EvaluateUpgradeAsync(1), Times.Once);
+    }
+
+    [Fact]
+    public async Task CompleteBookingAsync_WithNonPendingBooking_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      var booking = SeedBookingForActions(dbContext, BookingStatus.Cancelled, DateTime.UtcNow.AddHours(-1), customerId: 1);
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CompleteBookingAsync(booking.BookingID));
+
+      Assert.StartsWith("INVALID_STATUS", ex.Message);
+    }
+
+    [Fact]
+    public async Task CompleteBookingAsync_WithNonExistentBooking_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CompleteBookingAsync(999));
+
+      Assert.StartsWith("NOT_FOUND", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetCustomerBookingsAsync_ForCustomer_ShouldOnlyReturnTheirBookings()
+    {
+      using var dbContext = CreateDbContext();
+      SeedBookingForActions(dbContext, BookingStatus.Pending, DateTime.UtcNow.AddHours(3), customerId: 1);
+      SeedBookingForActions(dbContext, BookingStatus.Pending, DateTime.UtcNow.AddHours(3), customerId: 2);
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var result = await service.GetCustomerBookingsAsync(customerId: 1, guestPhone: null, status: null, page: 1, pageSize: 10);
+
+      Assert.Equal(1, result.Total);
+    }
+
+    [Fact]
+    public async Task GetCustomerBookingsAsync_ForGuestPhone_ShouldMatchByPhone()
+    {
+      using var dbContext = CreateDbContext();
+      SeedBookingForActions(dbContext, BookingStatus.Pending, DateTime.UtcNow.AddHours(3), customerId: 0, phone: "0909999999");
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var result = await service.GetCustomerBookingsAsync(customerId: null, guestPhone: "0909999999", status: null, page: 1, pageSize: 10);
+
+      Assert.Equal(1, result.Total);
+    }
+
+    [Fact]
+    public async Task GetCustomerBookingsAsync_WithoutIdOrPhone_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.GetCustomerBookingsAsync(customerId: null, guestPhone: null, status: null, page: 1, pageSize: 10));
+
+      Assert.StartsWith("UNAUTHORIZED", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetCustomerBookingsAsync_WithStatusFilter_ShouldOnlyReturnMatching()
+    {
+      using var dbContext = CreateDbContext();
+      SeedBookingForActions(dbContext, BookingStatus.Pending, DateTime.UtcNow.AddHours(3), customerId: 1);
+      SeedBookingForActions(dbContext, BookingStatus.Completed, DateTime.UtcNow.AddHours(-3), customerId: 1);
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var result = await service.GetCustomerBookingsAsync(customerId: 1, guestPhone: null, status: "Completed", page: 1, pageSize: 10);
+
+      Assert.Equal(1, result.Total);
+      Assert.Equal("Completed", result.Data[0].Status);
+    }
   }
 }
