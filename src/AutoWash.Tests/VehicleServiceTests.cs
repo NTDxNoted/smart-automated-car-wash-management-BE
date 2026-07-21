@@ -158,5 +158,40 @@ namespace AutoWash.Tests.Application.Services
 
       Assert.StartsWith("NOT_FOUND", ex.Message);
     }
+
+    [Fact]
+    public async Task AddVehicleAsync_WithInvalidLicensePlateFormat_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      var (service, otp, customer) = CreateService(dbContext);
+      var code = otp.GenerateAndStore(customer.Phone);
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.AddVehicleAsync(customer.CustomerID, new AddVehicleRequest
+      {
+        LicensePlate = "AEDADAWDAWD",
+        OtpCode = code
+      }));
+
+      Assert.StartsWith("INVALID_LICENSE_PLATE", ex.Message);
+    }
+
+    [Fact]
+    public async Task UpdateVehicleAsync_WithInvalidLicensePlateFormat_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      var (service, otp, customer) = CreateService(dbContext);
+
+      var addCode = otp.GenerateAndStore(customer.Phone);
+      var vehicle = await service.AddVehicleAsync(customer.CustomerID, new AddVehicleRequest { LicensePlate = "51A-123.45", OtpCode = addCode });
+
+      var updateCode = otp.GenerateAndStore(customer.Phone);
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.UpdateVehicleAsync(customer.CustomerID, vehicle.VehicleId, new UpdateVehicleRequest
+      {
+        LicensePlate = "12345",
+        OtpCode = updateCode
+      }));
+
+      Assert.StartsWith("INVALID_LICENSE_PLATE", ex.Message);
+    }
   }
 }

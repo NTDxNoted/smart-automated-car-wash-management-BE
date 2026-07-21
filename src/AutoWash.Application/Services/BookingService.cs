@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using AutoWash.Application.Common.Validation;
 using AutoWash.Application.DTOs;
 using AutoWash.Application.Interfaces;
 using AutoWash.Domain.Enums;
@@ -124,6 +125,9 @@ namespace AutoWash.Application.Services
                 }
                 else if (!string.IsNullOrWhiteSpace(request.LicensePlate))
                 {
+                    if (!LicensePlateValidator.IsValid(request.LicensePlate))
+                        throw new Exception("INVALID_LICENSE_PLATE: Biển số xe không đúng định dạng chuẩn Việt Nam (VD: 30F-123.45, 51F12345).");
+
                     var cleanPlate = request.LicensePlate.Trim().ToUpper();
                     selectedVehicle = await _context.Vehicles
                         .FirstOrDefaultAsync(v =>
@@ -160,6 +164,9 @@ namespace AutoWash.Application.Services
 
                 if (string.IsNullOrWhiteSpace(request.LicensePlate))
                     throw new Exception("LICENSE_PLATE_REQUIRED: Guest phải nhập biển số xe.");
+
+                if (!LicensePlateValidator.IsValid(request.LicensePlate))
+                    throw new Exception("INVALID_LICENSE_PLATE: Biển số xe không đúng định dạng chuẩn Việt Nam (VD: 30F-123.45, 51F12345).");
 
                 phone = request.Phone.Trim();
                 licensePlate = request.LicensePlate.Trim();
