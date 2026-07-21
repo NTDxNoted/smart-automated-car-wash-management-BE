@@ -116,6 +116,81 @@ namespace AutoWash.Tests.Application.Services
       Assert.StartsWith("INVALID_REQUEST", ex.Message);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-100)]
+    public async Task CreateRewardAsync_WithNonPositiveDiscountAmount_ShouldThrow(int discountAmount)
+    {
+      using var dbContext = CreateDbContext();
+      var service = CreateService(dbContext);
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CreateRewardAsync(new CreateRewardRequest
+      {
+        RewardName = "Reward",
+        Description = "d",
+        PointsRequired = 100,
+        DiscountAmount = discountAmount
+      }));
+
+      Assert.StartsWith("INVALID_REQUEST", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreateRewardAsync_WithPercentageOver100_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      var service = CreateService(dbContext);
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CreateRewardAsync(new CreateRewardRequest
+      {
+        RewardName = "Reward",
+        Description = "d",
+        PointsRequired = 100,
+        DiscountAmount = 150m,
+        DiscountType = "Percentage"
+      }));
+
+      Assert.StartsWith("INVALID_REQUEST", ex.Message);
+    }
+
+    [Fact]
+    public async Task UpdateRewardAsync_WithNonPositiveDiscountAmount_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      var reward = new RewardsCatalog { RewardName = "Reward", Description = "d", PointsRequired = 50, DiscountAmount = 10000m, IsActive = true };
+      dbContext.RewardsCatalog.Add(reward);
+      await dbContext.SaveChangesAsync();
+
+      var service = CreateService(dbContext);
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.UpdateRewardAsync(reward.RewardID, new UpdateRewardRequest
+      {
+        DiscountAmount = -1m
+      }));
+
+      Assert.StartsWith("INVALID_REQUEST", ex.Message);
+      Assert.Equal(10000m, reward.DiscountAmount); // không bị thay đổi khi request không hợp lệ
+    }
+
+    [Fact]
+    public async Task UpdateRewardAsync_RaisingDiscountAmountOverOnExistingPercentageReward_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      var reward = new RewardsCatalog { RewardName = "Reward", Description = "d", PointsRequired = 50, DiscountAmount = 10m, DiscountType = "Percentage", IsActive = true };
+      dbContext.RewardsCatalog.Add(reward);
+      await dbContext.SaveChangesAsync();
+
+      var service = CreateService(dbContext);
+
+      // Chỉ đổi DiscountAmount, không đổi DiscountType — vẫn phải bị chặn vì loại hiện tại là Percentage.
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.UpdateRewardAsync(reward.RewardID, new UpdateRewardRequest
+      {
+        DiscountAmount = 200m
+      }));
+
+      Assert.StartsWith("INVALID_REQUEST", ex.Message);
+    }
+
     [Fact]
     public async Task UpdateRewardAsync_WithPartialFields_ShouldOnlyChangeProvidedFields()
     {
