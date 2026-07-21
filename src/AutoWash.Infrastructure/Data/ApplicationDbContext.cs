@@ -163,13 +163,14 @@ namespace AutoWash.Infrastructure.Data
 
             builder.Entity<RewardsCatalog>(entity =>
             {
-                entity.ToTable("rewards_catalog");
+                entity.ToTable("rewards_catalog", t => t.HasCheckConstraint("CK_RewardsCatalog_DiscountType", "discounttype IN ('Fixed_Amount','Percentage')"));
                 entity.HasKey(e => e.RewardID);
 
                 entity.Property(e => e.RewardID).HasColumnName("rewardid");
                 entity.Property(e => e.RewardName).HasColumnName("rewardname");
                 entity.Property(e => e.PointsRequired).HasColumnName("pointsrequired");
                 entity.Property(e => e.DiscountAmount).HasColumnName("discountvalue");
+                entity.Property(e => e.DiscountType).HasColumnName("discounttype");
                 entity.Property(e => e.IsActive).HasColumnName("isactive");
 
                 entity.Ignore(e => e.Description);
