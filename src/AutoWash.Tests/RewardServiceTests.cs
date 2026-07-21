@@ -54,7 +54,45 @@ namespace AutoWash.Tests.Application.Services
 
       Assert.True(result.RewardId > 0);
       Assert.True(result.IsActive);
+      Assert.Equal("Fixed_Amount", result.DiscountType); // mặc định khi không truyền
       Assert.Equal(1, await dbContext.RewardsCatalog.CountAsync());
+    }
+
+    [Fact]
+    public async Task CreateRewardAsync_WithPercentageDiscountType_ShouldPersist()
+    {
+      using var dbContext = CreateDbContext();
+      var service = CreateService(dbContext);
+
+      var result = await service.CreateRewardAsync(new CreateRewardRequest
+      {
+        RewardName = "Giảm 10%",
+        Description = "Giảm 10% giá dịch vụ",
+        PointsRequired = 300,
+        DiscountAmount = 10m,
+        DiscountType = "Percentage"
+      });
+
+      Assert.Equal("Percentage", result.DiscountType);
+      Assert.Equal(10m, result.DiscountAmount);
+    }
+
+    [Fact]
+    public async Task CreateRewardAsync_WithInvalidDiscountType_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      var service = CreateService(dbContext);
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CreateRewardAsync(new CreateRewardRequest
+      {
+        RewardName = "Reward",
+        Description = "d",
+        PointsRequired = 100,
+        DiscountAmount = 10m,
+        DiscountType = "Bitcoin"
+      }));
+
+      Assert.StartsWith("INVALID_REQUEST", ex.Message);
     }
 
     [Theory]

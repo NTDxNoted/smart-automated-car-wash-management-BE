@@ -239,6 +239,36 @@ namespace AutoWash.Tests.Application.Services
     }
 
     [Fact]
+    public async Task SimulateRedemptionAsync_WithPercentageReward_ShouldComputeFromBaseAmount()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.RewardsCatalog.Add(new RewardsCatalog { RewardID = 1, RewardName = "Giảm 10%", PointsRequired = 50, DiscountAmount = 10m, DiscountType = "Percentage", IsActive = true });
+      dbContext.LoyaltyAccounts.Add(new LoyaltyAccount { CustomerID = 1, TotalPoints = 100, LastUpdated = DateTime.UtcNow });
+      await dbContext.SaveChangesAsync();
+
+      var service = CreateService(dbContext);
+      var result = await service.SimulateRedemptionAsync(1, 1, baseAmount: 100000m);
+
+      Assert.Equal("Percentage", result.DiscountType);
+      Assert.Equal(10000m, result.DiscountApplied); // 10% của 100000, dưới ngưỡng 50% nên không bị cap
+      Assert.Equal(90000m, result.FinalAmount);
+    }
+
+    [Fact]
+    public async Task SimulateRedemptionAsync_WithPercentageRewardExceeding50Percent_ShouldCap()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.RewardsCatalog.Add(new RewardsCatalog { RewardID = 1, RewardName = "Giảm 80%", PointsRequired = 50, DiscountAmount = 80m, DiscountType = "Percentage", IsActive = true });
+      dbContext.LoyaltyAccounts.Add(new LoyaltyAccount { CustomerID = 1, TotalPoints = 100, LastUpdated = DateTime.UtcNow });
+      await dbContext.SaveChangesAsync();
+
+      var service = CreateService(dbContext);
+      var result = await service.SimulateRedemptionAsync(1, 1, baseAmount: 100000m);
+
+      Assert.Equal(50000m, result.DiscountApplied); // 80% = 80000, bị cap còn 50% = 50000 (BR-60)
+    }
+
+    [Fact]
     public async Task SimulateRedemptionAsync_WithInactiveOrMissingReward_ShouldThrow()
     {
       using var dbContext = CreateDbContext();
