@@ -295,7 +295,16 @@ namespace AutoWash.Application.Services
 
             int maxParallelSlots = _bookingSettings.MaxParallelSlots > 0 ? _bookingSettings.MaxParallelSlots : 1;
             if (overlapCount >= maxParallelSlots)
-                throw new Exception("SLOT_NOT_AVAILABLE: Khung giờ này đã đầy (đạt giới hạn số lượng xe rửa song song).");
+            {
+                // BR-19: slot thường đã đầy — khách hạng cao hơn mức thấp nhất (Member/Guest)
+                // vẫn được đặt thêm vào buffer ưu tiên, thay vì bị từ chối ngay như khách thường.
+                var basePriorityScore = await _context.Tiers.MinAsync(t => (int?)t.PriorityScore) ?? 1;
+                var priorityBuffer = _bookingSettings.PriorityBufferSlots > 0 ? _bookingSettings.PriorityBufferSlots : 0;
+                bool isPriorityEligible = tier != null && tier.PriorityScore > basePriorityScore;
+
+                if (!isPriorityEligible || overlapCount >= maxParallelSlots + priorityBuffer)
+                    throw new Exception("SLOT_NOT_AVAILABLE: Khung giờ này đã đầy (đạt giới hạn số lượng xe rửa song song).");
+            }
 
             decimal baseAmount = service.Price;
             decimal tierDiscount = 0m;
