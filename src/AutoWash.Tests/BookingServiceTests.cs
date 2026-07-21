@@ -471,5 +471,93 @@ namespace AutoWash.Tests.Application.Services
       hubMock.Verify(h => h.NotifySlotOccupancyChangedAsync(
           It.IsAny<string>(), It.IsAny<string>(), 1, "Available"), Times.Once);
     }
+
+    private static (Customer customer, RewardsCatalog reward) SeedCustomerWithRewardEligibility(
+        ApplicationDbContext dbContext, string discountType, decimal discountAmount, int loyaltyPoints = 100)
+    {
+      dbContext.Tiers.Add(new Tier { TierID = 1, TierName = "Member", MinSpending = 0, BookingWindowDays = 7, DiscountRate = 0, PriorityScore = 1 });
+      var customer = new Customer { CustomerID = 1, FullName = "Reward Customer", Phone = "0901111111", Password = "pw", TierID = 1, CreatedAt = DateTime.UtcNow };
+      dbContext.Customers.Add(customer);
+      dbContext.Vehicles.Add(new Vehicle { VehicleID = 1, CustomerID = 1, LicensePlate = "51A-000.01", IsActive = true });
+      dbContext.LoyaltyAccounts.Add(new LoyaltyAccount { CustomerID = 1, TotalPoints = loyaltyPoints, LastUpdated = DateTime.UtcNow });
+      var reward = new RewardsCatalog { RewardID = 1, RewardName = "Reward", Description = "d", PointsRequired = 50, DiscountAmount = discountAmount, DiscountType = discountType, IsActive = true };
+      dbContext.RewardsCatalog.Add(reward);
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa cơ bản", ServiceCategory = "Basic", Price = 100000m, Duration = 20, Status = "Active" });
+      dbContext.SaveChanges();
+      return (customer, reward);
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_WithPercentageReward_ShouldApplyPercentageOfBaseAmount()
+    {
+      using var dbContext = CreateDbContext();
+      var (customer, reward) = SeedCustomerWithRewardEligibility(dbContext, "Percentage", 10m);
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var request = new CreateBookingRequest { ServiceId = 1, VehicleId = 1, ScheduledTime = DateTime.UtcNow.AddHours(2), RewardId = reward.RewardID };
+
+      var result = await service.CreateBookingAsync(request, customer.CustomerID);
+
+      Assert.Equal(10000m, result.Invoice.RewardDiscount); // 10% của 100,000
+      Assert.Equal(90000m, result.Invoice.FinalAmount);
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_WithFixedAmountReward_ShouldApplyFixedDiscount()
+    {
+      using var dbContext = CreateDbContext();
+      var (customer, reward) = SeedCustomerWithRewardEligibility(dbContext, "Fixed_Amount", 15000m);
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var request = new CreateBookingRequest { ServiceId = 1, VehicleId = 1, ScheduledTime = DateTime.UtcNow.AddHours(2), RewardId = reward.RewardID };
+
+      var result = await service.CreateBookingAsync(request, customer.CustomerID);
+
+      Assert.Equal(15000m, result.Invoice.RewardDiscount);
+      Assert.Equal(85000m, result.Invoice.FinalAmount);
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_WithRewardExceeding50PercentOfBaseAmount_ShouldCapAt50Percent()
+    {
+      using var dbContext = CreateDbContext();
+      // Percentage 80% của 100,000 = 80,000, vượt trần BR-60 (tối đa 50% hóa đơn = 50,000)
+      var (customer, reward) = SeedCustomerWithRewardEligibility(dbContext, "Percentage", 80m);
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var request = new CreateBookingRequest { ServiceId = 1, VehicleId = 1, ScheduledTime = DateTime.UtcNow.AddHours(2), RewardId = reward.RewardID };
+
+      var result = await service.CreateBookingAsync(request, customer.CustomerID);
+
+      Assert.Equal(50000m, result.Invoice.RewardDiscount);
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_WithInsufficientPointsForReward_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      var (customer, reward) = SeedCustomerWithRewardEligibility(dbContext, "Fixed_Amount", 15000m, loyaltyPoints: 10); // < 50 điểm yêu cầu
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var request = new CreateBookingRequest { ServiceId = 1, VehicleId = 1, ScheduledTime = DateTime.UtcNow.AddHours(2), RewardId = reward.RewardID };
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CreateBookingAsync(request, customer.CustomerID));
+
+      Assert.StartsWith("INSUFFICIENT_POINTS", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_WithNonExistentReward_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      var (customer, _) = SeedCustomerWithRewardEligibility(dbContext, "Fixed_Amount", 15000m);
+
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>());
+      var request = new CreateBookingRequest { ServiceId = 1, VehicleId = 1, ScheduledTime = DateTime.UtcNow.AddHours(2), RewardId = 999 };
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CreateBookingAsync(request, customer.CustomerID));
+
+      Assert.StartsWith("REWARD_NOT_FOUND", ex.Message);
+    }
   }
 }
