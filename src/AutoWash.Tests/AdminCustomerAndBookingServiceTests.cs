@@ -54,6 +54,54 @@ namespace AutoWash.Tests.Application.Services
     }
 
     [Fact]
+    public async Task GetCustomersAsync_ShouldExcludeAdminAccounts()
+    {
+      using var dbContext = CreateDbContext();
+
+      dbContext.Customers.AddRange(
+          new Customer { CustomerID = 1, FullName = "Member", Phone = "0901111111", Password = "pw", Role = "MEMBER", CreatedAt = DateTime.UtcNow },
+          new Customer { CustomerID = 2, FullName = "Admin", Phone = "0902222222", Password = "pw", Role = "ADMIN", CreatedAt = DateTime.UtcNow });
+      await dbContext.SaveChangesAsync();
+
+      var service = new AdminCustomerService(dbContext);
+      var result = await service.GetCustomersAsync(null, null, 1, 10);
+
+      Assert.Single(result.Data);
+      Assert.Equal("Member", result.Data[0].FullName);
+    }
+
+    [Fact]
+    public async Task GetCustomerByIdAsync_WithAdminAccount_ShouldThrowNotFound()
+    {
+      using var dbContext = CreateDbContext();
+
+      dbContext.Customers.Add(new Customer { CustomerID = 1, FullName = "Admin", Phone = "0901111111", Password = "pw", Role = "ADMIN", CreatedAt = DateTime.UtcNow });
+      await dbContext.SaveChangesAsync();
+
+      var service = new AdminCustomerService(dbContext);
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.GetCustomerByIdAsync(1));
+      Assert.StartsWith("NOT_FOUND", ex.Message);
+    }
+
+    [Fact]
+    public async Task ToggleLockCustomerAsync_WithAdminAccount_ShouldThrowForbidden()
+    {
+      using var dbContext = CreateDbContext();
+
+      dbContext.Customers.Add(new Customer { CustomerID = 1, FullName = "Admin", Phone = "0901111111", Password = "pw", Role = "ADMIN", IsLocked = false, CreatedAt = DateTime.UtcNow });
+      await dbContext.SaveChangesAsync();
+
+      var service = new AdminCustomerService(dbContext);
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.ToggleLockCustomerAsync(1));
+      Assert.StartsWith("FORBIDDEN", ex.Message);
+
+      var persisted = await dbContext.Customers.FirstAsync(c => c.CustomerID == 1);
+      Assert.False(persisted.IsLocked); // không bị thay đổi khi bị chặn
+    }
+
+    [Fact]
     public async Task UpdateBookingStatusAsync_WhenNoShowThresholdReached_ShouldSuspendCustomer()
     {
       using var dbContext = CreateDbContext();
