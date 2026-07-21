@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using System;
 using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
 using System.Security.Claims;
 using System.Text;
 using System.Threading.Tasks;
@@ -61,7 +62,6 @@ namespace AutoWash.Application.Services
         Phone = phone,
         Password = hashedPassword,
         Role = "MEMBER",
-        Tier = "1", // Mặc định là Tier 1 khi đăng ký mới
         IsLocked = false,
         TotalSpending = 0m,
         CreatedAt = DateTime.UtcNow
@@ -69,6 +69,9 @@ namespace AutoWash.Application.Services
 
       _dbContext.Customers.Add(customer);
       await _dbContext.SaveChangesAsync();
+
+      // BR-14: mặc định TierID = 1 (Member) khi đăng ký mới
+      customer.Tier = await ResolveTierNameAsync(customer.TierID);
 
       var loyaltyAccount = new LoyaltyAccount
       {
@@ -121,6 +124,9 @@ namespace AutoWash.Application.Services
       if (!BCrypt.Net.BCrypt.Verify(request.Password, customer.Password))
         throw new UnauthorizedAccessException("INVALID_CREDENTIALS");
 
+      // Tier là [NotMapped] trên Customer nên phải resolve tên tier từ TierID mỗi lần load lại từ DB
+      customer.Tier = await ResolveTierNameAsync(customer.TierID);
+
       var token = GenerateJwtToken(customer);
 
       return new AuthResponse
@@ -135,6 +141,18 @@ namespace AutoWash.Application.Services
         SuspendedUntil = customer.SuspendedUntil,
         CreatedAt = customer.CreatedAt
       };
+    }
+
+    // Customer.Tier là [NotMapped] — TierID mới là nguồn sự thật, cần resolve tên qua bảng Tiers.
+    // Fallback "Member" khi TierID=1 chưa được seed (vd. trong unit test dùng in-memory DB rỗng).
+    private async Task<string> ResolveTierNameAsync(int tierId)
+    {
+      var tierName = await _dbContext.Tiers
+          .Where(t => t.TierID == tierId)
+          .Select(t => t.TierName)
+          .FirstOrDefaultAsync();
+
+      return tierName ?? (tierId == 1 ? "Member" : tierId.ToString());
     }
 
     private string GenerateJwtToken(Customer customer)
@@ -173,12 +191,51 @@ namespace AutoWash.Application.Services
 
     public Task<bool> ValidateTokenAsync(string token)
     {
-      throw new NotImplementedException();
+      var jwtSecretKey = _configuration["Jwt:SecretKey"];
+      if (string.IsNullOrWhiteSpace(jwtSecretKey))
+        return Task.FromResult(false);
+
+      var jwtIssuer = _configuration["Jwt:Issuer"] ?? "AutoWashAPI";
+      var jwtAudience = _configuration["Jwt:Audience"] ?? "AutoWashClient";
+      var key = new SymmetricSecurityKey(Encoding.ASCII.GetBytes(jwtSecretKey));
+
+      try
+      {
+        new JwtSecurityTokenHandler().ValidateToken(token, new TokenValidationParameters
+        {
+          ValidateIssuerSigningKey = true,
+          IssuerSigningKey = key,
+          ValidateIssuer = true,
+          ValidIssuer = jwtIssuer,
+          ValidateAudience = true,
+          ValidAudience = jwtAudience,
+          ValidateLifetime = true,
+          ClockSkew = TimeSpan.Zero
+        }, out _);
+
+        return Task.FromResult(true);
+      }
+      catch
+      {
+        return Task.FromResult(false);
+      }
     }
 
     public int? GetCustomerIdFromToken(string token)
     {
-      throw new NotImplementedException();
+      try
+      {
+        var jwtToken = new JwtSecurityTokenHandler().ReadJwtToken(token);
+        var customerIdClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier);
+
+        return customerIdClaim != null && int.TryParse(customerIdClaim.Value, out var customerId)
+            ? customerId
+            : null;
+      }
+      catch
+      {
+        return null;
+      }
     }
   }
 }
