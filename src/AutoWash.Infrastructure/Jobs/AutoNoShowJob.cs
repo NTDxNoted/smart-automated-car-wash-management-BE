@@ -46,36 +46,49 @@ namespace AutoWash.Infrastructure.Jobs
 
                     if (overdueBookings.Any())
                     {
+                        var now = DateTime.UtcNow;
+
                         foreach (var booking in overdueBookings)
                         {
                             booking.Status = BookingStatus.NoShow;
-                            booking.CompletedAt = DateTime.UtcNow;
+                            booking.CompletedAt = now;
 
                             _logger.LogWarning(
                                 "Booking {BookingID} automatically marked as NoShow because customer did not show up.",
                                 booking.BookingID);
                         }
 
-                        await dbContext.SaveChangesAsync(stoppingToken);
+                        // Đếm số no-show trong chính batch này (chưa lưu DB) theo từng khách, để cộng
+                        // vào lịch sử — không SaveChanges giữa 2 bước để tránh mất trạng thái suspend
+                        // nếu bước sau lỗi (booking đã NoShow nhưng không còn match filter Pending ở lần chạy sau).
+                        string CustomerKey(int customerId, string? phone) =>
+                            customerId > 0 ? customerId.ToString() : (phone ?? string.Empty);
+
+                        var batchCountByCustomer = overdueBookings
+                            .GroupBy(b => CustomerKey(b.CustomerID, b.Phone))
+                            .ToDictionary(g => g.Key, g => g.Count());
+
+                        var cutoff = now.AddDays(-30);
 
                         foreach (var booking in overdueBookings)
                         {
                             var customer = await dbContext.Customers.FirstOrDefaultAsync(c =>
                                 (booking.CustomerID > 0 && c.CustomerID == booking.CustomerID) ||
-                                (!string.IsNullOrWhiteSpace(booking.Phone) && c.Phone == booking.Phone));
+                                (!string.IsNullOrWhiteSpace(booking.Phone) && c.Phone == booking.Phone), stoppingToken);
 
                             if (customer == null)
                             {
                                 continue;
                             }
 
-                            var now = DateTime.UtcNow;
-                            var cutoff = now.AddDays(-30);
-                            var noShowCount = await dbContext.Bookings.CountAsync(b =>
+                            var historicalCount = await dbContext.Bookings.CountAsync(b =>
                                 b.Status == BookingStatus.NoShow &&
                                 ((b.CompletedAt ?? b.CreatedAt) >= cutoff) &&
                                 ((b.CustomerID > 0 && b.CustomerID == customer.CustomerID) ||
-                                 (!string.IsNullOrWhiteSpace(b.Phone) && b.Phone == customer.Phone)));
+                                 (!string.IsNullOrWhiteSpace(b.Phone) && b.Phone == customer.Phone)), stoppingToken);
+
+                            var batchCount = batchCountByCustomer.TryGetValue(CustomerKey(customer.CustomerID, customer.Phone), out var c2) ? c2 : 0;
+                            var noShowCount = historicalCount + batchCount;
 
                             if (noShowCount >= 3)
                             {
