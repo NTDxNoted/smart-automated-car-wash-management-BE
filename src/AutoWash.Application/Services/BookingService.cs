@@ -326,7 +326,13 @@ namespace AutoWash.Application.Services
                 if (loyalty == null || loyalty.TotalPoints < reward.PointsRequired)
                     throw new Exception("INSUFFICIENT_POINTS: Điểm không đủ để dùng ưu đãi này.");
 
-                rewardDiscount = Math.Min(reward.DiscountAmount, baseAmount * 0.50m);
+                // BR-Rewards: % tính trên giá gốc dịch vụ; Fixed_Amount giữ nguyên số tiền.
+                decimal rawRewardDiscount = reward.DiscountType == "Percentage"
+                    ? Math.Round(baseAmount * (reward.DiscountAmount / 100m), 0)
+                    : reward.DiscountAmount;
+
+                // BR-60: điểm thưởng chỉ được thanh toán tối đa 50% giá trị hóa đơn.
+                rewardDiscount = Math.Min(rawRewardDiscount, baseAmount * 0.50m);
 
                 if (rewardDiscount < 0)
                     rewardDiscount = 0;
