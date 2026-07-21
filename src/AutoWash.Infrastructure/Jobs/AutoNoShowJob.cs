@@ -71,7 +71,7 @@ namespace AutoWash.Infrastructure.Jobs
 
                             var now = DateTime.UtcNow;
                             var cutoff = now.AddDays(-30);
-                            var noShowCount = 1 + await dbContext.Bookings.CountAsync(b =>
+                            var noShowCount = await dbContext.Bookings.CountAsync(b =>
                                 b.Status == BookingStatus.NoShow &&
                                 ((b.CompletedAt ?? b.CreatedAt) >= cutoff) &&
                                 ((b.CustomerID > 0 && b.CustomerID == customer.CustomerID) ||
