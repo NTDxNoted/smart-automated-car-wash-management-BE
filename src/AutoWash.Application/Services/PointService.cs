@@ -62,6 +62,10 @@ namespace AutoWash.Application.Services
                 });
 
                 _logger.LogInformation("[EarnPoints] BookingID={Bid} +{Pts} points", bookingId, calculatedPoints);
+
+                // Không thể trông chờ caller SaveChanges() hộ — nếu không service này gọi đứng một mình
+                // (ngoài PaymentService) sẽ mất điểm và PointTransaction âm thầm không được lưu.
+                await _context.SaveChangesAsync();
             }
 
             return calculatedPoints;
