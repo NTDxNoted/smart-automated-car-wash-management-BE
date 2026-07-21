@@ -9,16 +9,23 @@ namespace AutoWash.Application.Services
     public class CustomerService : ICustomerService
     {
         private readonly IApplicationDbContext _context;
+        private readonly ITierService _tierService;
 
-        public CustomerService(IApplicationDbContext context)
+        public CustomerService(IApplicationDbContext context, ITierService tierService)
         {
             _context = context;
+            _tierService = tierService;
         }
 
         public async Task<ProfileResponse> GetProfileAsync(int customerId)
         {
             var customer = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == customerId);
             if (customer == null) throw new Exception("NOT_FOUND: Không tìm thấy tài khoản.");
+
+            // BR-21: quét nâng hạng ngay khi khách xem Profile, phòng trường hợp TotalSpending
+            // đã đủ điều kiện tier cao hơn nhưng chưa có sự kiện Completed nào kích hoạt lại
+            // (vd. dữ liệu được chỉnh sửa trực tiếp, hoặc job đánh giá bị bỏ lỡ trước đó).
+            await _tierService.EvaluateUpgradeAsync(customerId);
 
             var loyalty = await _context.LoyaltyAccounts.FirstOrDefaultAsync(l => l.CustomerID == customerId);
 
