@@ -94,6 +94,41 @@ namespace AutoWash.Tests.Application.Services
     }
 
     [Fact]
+    public async Task AddVehicleAsync_WithLowercaseOrPaddedPlate_ShouldNormalizeToUppercaseTrimmed()
+    {
+      using var dbContext = CreateDbContext();
+      var (service, otp, customer) = CreateService(dbContext);
+      var code = otp.GenerateAndStore(customer.Phone);
+
+      var result = await service.AddVehicleAsync(customer.CustomerID, new AddVehicleRequest
+      {
+        LicensePlate = " 51f-123.45 ",
+        OtpCode = code
+      });
+
+      Assert.Equal("51F-123.45", result.LicensePlate);
+    }
+
+    [Fact]
+    public async Task AddVehicleAsync_WithDuplicatePlateDifferingByCase_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      var (service, otp, customer) = CreateService(dbContext);
+
+      var firstCode = otp.GenerateAndStore(customer.Phone);
+      await service.AddVehicleAsync(customer.CustomerID, new AddVehicleRequest { LicensePlate = "51A-123.45", OtpCode = firstCode });
+
+      var secondCode = otp.GenerateAndStore(customer.Phone);
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.AddVehicleAsync(customer.CustomerID, new AddVehicleRequest
+      {
+        LicensePlate = "51a-123.45",
+        OtpCode = secondCode
+      }));
+
+      Assert.StartsWith("PLATE_ALREADY_SAVED", ex.Message);
+    }
+
+    [Fact]
     public async Task UpdateVehicleAsync_WithValidOtp_ShouldUpdatePlate()
     {
       using var dbContext = CreateDbContext();
