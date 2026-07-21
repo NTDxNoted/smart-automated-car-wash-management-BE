@@ -21,7 +21,7 @@ namespace AutoWash.Tests.Application.Services
       return new ApplicationDbContext(options);
     }
 
-    private static Customer SeedCustomer(ApplicationDbContext dbContext, int points, bool isLocked = false)
+    private static Customer SeedCustomer(ApplicationDbContext dbContext, int points, bool isLocked = false, int tierId = 1)
     {
       var customer = new Customer
       {
@@ -29,6 +29,7 @@ namespace AutoWash.Tests.Application.Services
         Phone = "0901234567",
         Password = "pw",
         IsLocked = isLocked,
+        TierID = tierId,
         CreatedAt = DateTime.UtcNow,
         LoyaltyAccount = new LoyaltyAccount { TotalPoints = points, LastUpdated = DateTime.UtcNow }
       };
@@ -130,23 +131,25 @@ namespace AutoWash.Tests.Application.Services
     }
 
     [Theory]
-    [InlineData(6000, "platinum")]
-    [InlineData(2500, "gold")]
-    [InlineData(800, "silver")]
-    [InlineData(100, "member")]
-    public async Task GetCustomersAsync_WithTierFilter_ShouldOnlyReturnMatchingTier(int points, string tierFilter)
+    [InlineData(3, "platinum")]
+    [InlineData(2, "silver")]
+    [InlineData(1, "member")]
+    public async Task GetCustomersAsync_WithTierFilter_ShouldOnlyReturnMatchingTier(int tierId, string tierFilter)
     {
       using var dbContext = CreateDbContext();
-      SeedCustomer(dbContext, points: 6000); // Platinum
-      SeedCustomer(dbContext, points: 2500); // Gold
-      SeedCustomer(dbContext, points: 800);  // Silver
-      SeedCustomer(dbContext, points: 100);  // Member
+      dbContext.Tiers.Add(new Tier { TierID = 2, TierName = "Silver", MinSpending = 1_000_000, BookingWindowDays = 10, DiscountRate = 5, PriorityScore = 2 });
+      dbContext.Tiers.Add(new Tier { TierID = 3, TierName = "Platinum", MinSpending = 5_000_000, BookingWindowDays = 14, DiscountRate = 15, PriorityScore = 3 });
+      await dbContext.SaveChangesAsync();
+
+      SeedCustomer(dbContext, points: 0, tierId: 3); // Platinum
+      SeedCustomer(dbContext, points: 0, tierId: 2); // Silver
+      SeedCustomer(dbContext, points: 0, tierId: 1); // Member
 
       var service = new AdminCustomerService(dbContext);
       var result = await service.GetCustomersAsync(tierFilter, null, 1, 10);
 
       Assert.Single(result.Data);
-      Assert.Equal(points, result.Data[0].Points);
+      Assert.Equal(tierFilter, result.Data[0].Tier.ToLower());
     }
 
     [Fact]

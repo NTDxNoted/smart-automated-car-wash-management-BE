@@ -104,20 +104,23 @@ namespace AutoWash.Tests.Application.Services
     }
 
     [Fact]
-    public async Task GetTierDistributionAsync_ShouldGroupCustomersByPointsBasedTier()
+    public async Task GetTierDistributionAsync_ShouldGroupCustomersByTierID()
     {
       using var db = CreateDbContext();
       var service = new ReportService(db);
 
-      db.Customers.Add(new Customer { FullName = "Platinum Cust", Phone = "0901", Password = "pw", CreatedAt = DateTime.UtcNow, LoyaltyAccount = new LoyaltyAccount { TotalPoints = 6000, LastUpdated = DateTime.UtcNow } });
-      db.Customers.Add(new Customer { FullName = "Member Cust", Phone = "0902", Password = "pw", CreatedAt = DateTime.UtcNow, LoyaltyAccount = new LoyaltyAccount { TotalPoints = 10, LastUpdated = DateTime.UtcNow } });
-      db.Customers.Add(new Customer { FullName = "No Loyalty Cust", Phone = "0903", Password = "pw", CreatedAt = DateTime.UtcNow });
+      db.Tiers.Add(new Tier { TierID = 3, TierName = "Gold", MinSpending = 3_000_000, BookingWindowDays = 12, DiscountRate = 10, PriorityScore = 3 });
+      await db.SaveChangesAsync();
+
+      db.Customers.Add(new Customer { FullName = "Gold Cust", Phone = "0901", Password = "pw", TierID = 3, CreatedAt = DateTime.UtcNow });
+      db.Customers.Add(new Customer { FullName = "Member Cust 1", Phone = "0902", Password = "pw", CreatedAt = DateTime.UtcNow }); // default TierID = 1
+      db.Customers.Add(new Customer { FullName = "Member Cust 2", Phone = "0903", Password = "pw", CreatedAt = DateTime.UtcNow });
       await db.SaveChangesAsync();
 
       var result = await service.GetTierDistributionAsync();
 
-      Assert.Equal(2, result.Single(x => x.Tier == "Member").CustomerCount); // "no loyalty" + "10 điểm" đều rơi vào Member
-      Assert.Equal(1, result.Single(x => x.Tier == "Platinum").CustomerCount);
+      Assert.Equal(2, result.Single(x => x.Tier == "Member").CustomerCount);
+      Assert.Equal(1, result.Single(x => x.Tier == "Gold").CustomerCount);
     }
 
     [Fact]
