@@ -6,6 +6,7 @@ namespace AutoWash.Application.DTOs
         public string RewardName { get; set; } = string.Empty;
         public int PointsRequired { get; set; }
         public decimal DiscountValue { get; set; }
+        public string DiscountType { get; set; } = string.Empty;
         public decimal MaxAllowed { get; set; }
         public decimal DiscountApplied { get; set; }
         public decimal FinalAmount { get; set; }
