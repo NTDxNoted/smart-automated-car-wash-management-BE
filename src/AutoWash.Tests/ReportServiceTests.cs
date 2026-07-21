@@ -77,5 +77,91 @@ namespace AutoWash.Tests.Application.Services
       Assert.Equal(150, result.PointsExpiringSoon);
       Assert.Equal(100, result.ExpiredPoints);
     }
+
+    [Fact]
+    public async Task GetPopularServicesReportAsync_ShouldRankByUsageCountAndComputePercentage()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      db.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa cơ bản", ServiceCategory = "Basic", Description = "d", Price = 50000m, Duration = 30 });
+      db.Services.Add(new Service { ServiceID = 2, ServiceName = "Rửa VIP", ServiceCategory = "VIP", Description = "d", Price = 150000m, Duration = 60 });
+      db.Bookings.AddRange(
+          new Booking { CustomerID = 1, ServiceID = 1, Status = BookingStatus.Completed, FinalAmount = 50000m, CreatedAt = DateTime.UtcNow },
+          new Booking { CustomerID = 1, ServiceID = 1, Status = BookingStatus.Completed, FinalAmount = 50000m, CreatedAt = DateTime.UtcNow },
+          new Booking { CustomerID = 1, ServiceID = 2, Status = BookingStatus.Completed, FinalAmount = 150000m, CreatedAt = DateTime.UtcNow },
+          new Booking { CustomerID = 1, ServiceID = 2, Status = BookingStatus.Pending, FinalAmount = 150000m, CreatedAt = DateTime.UtcNow } // không tính vì chưa Completed
+      );
+      await db.SaveChangesAsync();
+
+      var result = await service.GetPopularServicesReportAsync(null, null);
+
+      Assert.Equal(2, result.Count);
+      Assert.Equal("Rửa cơ bản", result[0].ServiceName); // 2 lượt > 1 lượt, xếp đầu
+      Assert.Equal(2, result[0].UsageCount);
+      Assert.Equal(100000m, result[0].TotalRevenue);
+      Assert.Equal(66.67m, result[0].Percentage); // 2/3 completed bookings
+    }
+
+    [Fact]
+    public async Task GetTierDistributionAsync_ShouldGroupCustomersByPointsBasedTier()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      db.Customers.Add(new Customer { FullName = "Platinum Cust", Phone = "0901", Password = "pw", CreatedAt = DateTime.UtcNow, LoyaltyAccount = new LoyaltyAccount { TotalPoints = 6000, LastUpdated = DateTime.UtcNow } });
+      db.Customers.Add(new Customer { FullName = "Member Cust", Phone = "0902", Password = "pw", CreatedAt = DateTime.UtcNow, LoyaltyAccount = new LoyaltyAccount { TotalPoints = 10, LastUpdated = DateTime.UtcNow } });
+      db.Customers.Add(new Customer { FullName = "No Loyalty Cust", Phone = "0903", Password = "pw", CreatedAt = DateTime.UtcNow });
+      await db.SaveChangesAsync();
+
+      var result = await service.GetTierDistributionAsync();
+
+      Assert.Equal(2, result.Single(x => x.Tier == "Member").CustomerCount); // "no loyalty" + "10 điểm" đều rơi vào Member
+      Assert.Equal(1, result.Single(x => x.Tier == "Platinum").CustomerCount);
+    }
+
+    [Fact]
+    public async Task GetPeakOccupancyReportAsync_ShouldCountBookingsPerDayOfWeekAndHourSlot()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      // 2024-01-01 là Thứ Hai theo giờ VN (UTC+7); 08:00 VN = 01:00 UTC
+      var mondayMorningUtc = new DateTime(2024, 1, 1, 1, 0, 0, DateTimeKind.Utc);
+      db.Bookings.Add(new Booking { CustomerID = 1, ServiceID = 1, Status = BookingStatus.Completed, ScheduledTime = mondayMorningUtc, FinalAmount = 50000m, CreatedAt = mondayMorningUtc });
+      await db.SaveChangesAsync();
+
+      var result = await service.GetPeakOccupancyReportAsync(new DateTime(2024, 1, 1), new DateTime(2024, 1, 1));
+
+      Assert.Equal(1, result.TotalDays);
+      Assert.Equal(1, result.DayOfWeekStats.First(d => d.DayOfWeek == "Monday").BookingCount);
+      Assert.Equal(0, result.DayOfWeekStats.First(d => d.DayOfWeek == "Tuesday").BookingCount);
+      Assert.Contains(result.HourStats, h => h.BookingCount == 1);
+    }
+
+    [Fact]
+    public async Task GetPromotionRoiReportAsync_ShouldComputeRoiFromCompletedPaidBookings()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      var completedAtVn = new DateTime(2024, 1, 15, 12, 0, 0, DateTimeKind.Utc); // đã trong khoảng UTC test dưới
+
+      db.Promotions.Add(new Promotion { PromotionID = 1, Title = "Tết Sale", PromoCode = "TET2024", DiscountType = "Fixed_Amount", DiscountValue = 20000m, StartDate = new DateTime(2024, 1, 1), EndDate = new DateTime(2024, 1, 31) });
+      db.Bookings.Add(new Booking { BookingID = 1, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Completed, FinalAmount = 100000m, ScheduledTime = completedAtVn, CompletedAt = completedAtVn, CreatedAt = completedAtVn });
+      db.CustomerPromotions.Add(new CustomerPromotion { CustomerID = 1, PromotionID = 1, BookingID = 1, DiscountAmountActual = 20000m, UsedAt = completedAtVn });
+      db.Transactions.Add(new Transaction { BookingID = 1, Amount = 100000m, PaymentMethod = PaymentMethod.Cash, Status = TransactionStatus.Paid, PaidAt = completedAtVn });
+      await db.SaveChangesAsync();
+
+      var result = await service.GetPromotionRoiReportAsync(new DateTime(2024, 1, 1), new DateTime(2024, 1, 31));
+
+      Assert.Equal(1, result.TotalPromotions);
+      var item = result.Items.Single();
+      Assert.Equal("TET2024", item.PromoCode);
+      Assert.Equal(1, item.UsageCount);
+      Assert.Equal(20000m, item.TotalDiscountGiven);
+      Assert.Equal(100000m, item.RevenueGenerated);
+      Assert.Equal(400m, item.RoiPercentage); // (100000-20000)/20000 * 100
+    }
   }
 }
