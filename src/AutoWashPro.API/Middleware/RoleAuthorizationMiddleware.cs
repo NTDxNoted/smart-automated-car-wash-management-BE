@@ -33,32 +33,36 @@ namespace AutoWashPro.API.Middleware
                 !path.StartsWith("/api/admin/auth/login", StringComparison.OrdinalIgnoreCase))
             {
                 var user = context.User;
-                var isAuthorized = false;
 
-                if (user?.Identity?.IsAuthenticated == true)
+                // 401: chưa đăng nhập / token thiếu, sai hoặc hết hạn — JwtMiddleware không gán được User.
+                // Khác với 403 (đã đăng nhập nhưng không đủ quyền) để FE phân biệt được lúc nào cần
+                // yêu cầu đăng nhập lại và lúc nào chỉ đơn giản là không có quyền.
+                if (user?.Identity?.IsAuthenticated != true)
                 {
-                    var roleClaim = user.FindFirst("role")?.Value ?? user.FindFirst(ClaimTypes.Role)?.Value;
-                    if (roleClaim != null && roleClaim.Equals("Admin", StringComparison.OrdinalIgnoreCase))
-                    {
-                        isAuthorized = true;
-                    }
+                    await WriteErrorAsync(context, StatusCodes.Status401Unauthorized, "UNAUTHORIZED",
+                        "Bạn cần đăng nhập để truy cập tài nguyên này.");
+                    return;
                 }
 
-                if (!isAuthorized)
+                var roleClaim = user.FindFirst("role")?.Value ?? user.FindFirst(ClaimTypes.Role)?.Value;
+                var isAdmin = roleClaim != null && roleClaim.Equals("Admin", StringComparison.OrdinalIgnoreCase);
+
+                if (!isAdmin)
                 {
-                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                    context.Response.ContentType = "application/json";
-                    var errorResponse = new
-                    {
-                        error = "FORBIDDEN",
-                        message = "Bạn không có quyền truy cập vào tài nguyên này"
-                    };
-                    await context.Response.WriteAsJsonAsync(errorResponse);
+                    await WriteErrorAsync(context, StatusCodes.Status403Forbidden, "FORBIDDEN",
+                        "Bạn không có quyền truy cập vào tài nguyên này");
                     return;
                 }
             }
 
             await _next(context);
+        }
+
+        private static Task WriteErrorAsync(HttpContext context, int statusCode, string error, string message)
+        {
+            context.Response.StatusCode = statusCode;
+            context.Response.ContentType = "application/json";
+            return context.Response.WriteAsJsonAsync(new { error, message });
         }
     }
 
@@ -68,31 +72,37 @@ namespace AutoWashPro.API.Middleware
         public Task OnAuthorizationAsync(AuthorizationFilterContext context)
         {
             var user = context.HttpContext.User;
-            var isAuthorized = false;
 
-            if (user?.Identity?.IsAuthenticated == true)
+            if (user?.Identity?.IsAuthenticated != true)
             {
-                var roleClaim = user.FindFirst("role")?.Value ?? user.FindFirst(ClaimTypes.Role)?.Value;
-                if (roleClaim != null && roleClaim.Equals("Admin", StringComparison.OrdinalIgnoreCase))
-                {
-                    isAuthorized = true;
-                }
+                context.Result = Unauthorized();
+                return Task.CompletedTask;
             }
 
-            if (!isAuthorized)
+            var roleClaim = user.FindFirst("role")?.Value ?? user.FindFirst(ClaimTypes.Role)?.Value;
+            var isAdmin = roleClaim != null && roleClaim.Equals("Admin", StringComparison.OrdinalIgnoreCase);
+
+            if (!isAdmin)
             {
-                context.Result = new JsonResult(new
-                {
-                    error = "FORBIDDEN",
-                    message = "Bạn không có quyền truy cập vào tài nguyên này"
-                })
-                {
-                    StatusCode = StatusCodes.Status403Forbidden
-                };
+                context.Result = Forbidden();
             }
 
             return Task.CompletedTask;
         }
+
+        internal static JsonResult Unauthorized() => new JsonResult(new
+        {
+            error = "UNAUTHORIZED",
+            message = "Bạn cần đăng nhập để truy cập tài nguyên này."
+        })
+        { StatusCode = StatusCodes.Status401Unauthorized };
+
+        internal static JsonResult Forbidden() => new JsonResult(new
+        {
+            error = "FORBIDDEN",
+            message = "Bạn không có quyền truy cập vào tài nguyên này"
+        })
+        { StatusCode = StatusCodes.Status403Forbidden };
     }
 
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
@@ -101,28 +111,20 @@ namespace AutoWashPro.API.Middleware
         public Task OnAuthorizationAsync(AuthorizationFilterContext context)
         {
             var user = context.HttpContext.User;
-            var isAuthorized = false;
 
-            if (user?.Identity?.IsAuthenticated == true)
+            if (user?.Identity?.IsAuthenticated != true)
             {
-                var roleClaim = user.FindFirst("role")?.Value ?? user.FindFirst(ClaimTypes.Role)?.Value;
-                // Only allow "Member" (case-insensitive)
-                if (roleClaim != null && roleClaim.Equals("Member", StringComparison.OrdinalIgnoreCase))
-                {
-                    isAuthorized = true;
-                }
+                context.Result = AuthorizeAdminAttribute.Unauthorized();
+                return Task.CompletedTask;
             }
 
-            if (!isAuthorized)
+            var roleClaim = user.FindFirst("role")?.Value ?? user.FindFirst(ClaimTypes.Role)?.Value;
+            // Only allow "Member" (case-insensitive)
+            var isMember = roleClaim != null && roleClaim.Equals("Member", StringComparison.OrdinalIgnoreCase);
+
+            if (!isMember)
             {
-                context.Result = new JsonResult(new
-                {
-                    error = "FORBIDDEN",
-                    message = "Bạn không có quyền truy cập vào tài nguyên này"
-                })
-                {
-                    StatusCode = StatusCodes.Status403Forbidden
-                };
+                context.Result = AuthorizeAdminAttribute.Forbidden();
             }
 
             return Task.CompletedTask;

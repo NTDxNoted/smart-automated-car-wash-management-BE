@@ -25,6 +25,7 @@
     <ProjectReference Include="..\AutoWash.Application\AutoWash.Application.csproj" />
     <ProjectReference Include="..\AutoWash.Infrastructure\AutoWash.Infrastructure.csproj" />
     <ProjectReference Include="..\AutoWash.Domain\AutoWash.Domain.csproj" />
+    <ProjectReference Include="..\AutoWashPro.API\AutoWashPro.API.csproj" />
   </ItemGroup>
 
 </Project>
