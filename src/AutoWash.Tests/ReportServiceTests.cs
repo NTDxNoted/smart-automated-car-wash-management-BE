@@ -77,5 +77,36 @@ namespace AutoWash.Tests.Application.Services
       Assert.Equal(150, result.PointsExpiringSoon);
       Assert.Equal(100, result.ExpiredPoints);
     }
+
+    [Fact]
+    public async Task GetPeakOccupancyReportAsync_ShouldCountEarlyMorningVietnamBookingOnRequestedDay()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      // 2026-07-10 00:30 giờ VN == 2026-07-09 17:30 UTC (lưu trong DB). Nếu range không dịch -7h,
+      // mốc UTC này rơi trước rangeStart (2026-07-10 00:00 UTC) và bị loại khỏi báo cáo ngày 10/07.
+      var scheduledUtc = new DateTime(2026, 7, 9, 17, 30, 0, DateTimeKind.Utc);
+      db.Bookings.Add(new Booking
+      {
+        BookingID = 1,
+        CustomerID = 1,
+        ServiceID = 1,
+        Phone = "0901111111",
+        LicensePlate = "51A-111.11",
+        ScheduledTime = scheduledUtc,
+        Status = BookingStatus.Completed,
+        FinalAmount = 100000m,
+        CreatedAt = scheduledUtc
+      });
+      await db.SaveChangesAsync();
+
+      var requestedDay = new DateTime(2026, 7, 10);
+      var result = await service.GetPeakOccupancyReportAsync(requestedDay, requestedDay);
+
+      // Booking 00:30 giờ VN nằm ngoài khung slot 07:30-17:30 nên HourStats không đếm (đúng thiết
+      // kế) — chỉ DayOfWeekStats (không giới hạn giờ) mới phản ánh đúng ngày lịch VN của booking.
+      Assert.Equal(1, result.DayOfWeekStats.Sum(d => d.BookingCount));
+    }
   }
 }
