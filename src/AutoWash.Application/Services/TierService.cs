@@ -34,7 +34,23 @@ namespace AutoWash.Application.Services
             var tier = await _context.Tiers.FirstOrDefaultAsync(t => t.TierID == tierId);
             if (tier == null) throw new Exception("NOT_FOUND: Không tìm thấy tier.");
 
-            if (request.MinSpending.HasValue) tier.MinSpending = request.MinSpending.Value;
+            if (request.MinSpending.HasValue)
+            {
+                // EvaluateUpgradeAsync/RunMonthlyDowngradeAsync chọn tier theo MinSpending cao nhất
+                // đạt được, còn quyết định upgrade/downgrade lại so sánh TierID (giả định TierID tăng
+                // dần theo PriorityScore). Nếu MinSpending bị sửa lệch thứ tự so với PriorityScore,
+                // 2 hàm trên sẽ chọn nhầm tier. Chặn sớm ở đây thay vì để sai lệch âm thầm.
+                var otherTiers = await _context.Tiers.Where(t => t.TierID != tierId).ToListAsync();
+                var violatesOrder = otherTiers.Any(t =>
+                    (t.PriorityScore > tier.PriorityScore && t.MinSpending < request.MinSpending.Value) ||
+                    (t.PriorityScore < tier.PriorityScore && t.MinSpending > request.MinSpending.Value));
+
+                if (violatesOrder)
+                    throw new Exception("INVALID_REQUEST: MinSpending phải tăng dần theo PriorityScore giữa các tier.");
+
+                tier.MinSpending = request.MinSpending.Value;
+            }
+
             if (request.DiscountRate.HasValue) tier.DiscountRate = request.DiscountRate.Value;
             if (request.BookingWindowDays.HasValue) tier.BookingWindowDays = request.BookingWindowDays.Value;
 
