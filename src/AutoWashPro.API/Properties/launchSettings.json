@@ -4,7 +4,8 @@
       "commandName": "Project",
       "launchBrowser": true,
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "JWT_SECRET_KEY": "AutoWashPro_SecretKey_2025_MustBe32CharsLong!!"
       },
       "applicationUrl": "https://localhost:59152;http://localhost:59153"
     }
