@@ -16,6 +16,13 @@ namespace AutoWash.Application.DTOs.Admin
         public DateTime? CheckInTime { get; set; }
         public string Status { get; set; } = string.Empty;
         public decimal TotalPrice { get; set; }
+        public decimal BaseAmount { get; set; }
+        public decimal DiscountApplied { get; set; }
+        public decimal FinalAmount { get; set; }
+        public int PointsEarned { get; set; }
+        public string? PaymentStatus { get; set; }
+        public string? PaymentMethod { get; set; }
+        public DateTime? PaymentAt { get; set; }
         public DateTime CreatedAt { get; set; }
     }
 
