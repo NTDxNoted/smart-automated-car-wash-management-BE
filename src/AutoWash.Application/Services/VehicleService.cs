@@ -13,12 +13,10 @@ namespace AutoWash.Application.Services
     public class VehicleService : IVehicleService
     {
         private readonly IApplicationDbContext _context;
-        private readonly IOtpService _otpService;
 
-        public VehicleService(IApplicationDbContext context, IOtpService otpService)
+        public VehicleService(IApplicationDbContext context)
         {
             _context = context;
-            _otpService = otpService;
         }
 
         public async Task<IEnumerable<VehicleResponse>> GetVehiclesAsync(int customerId)
@@ -46,10 +44,6 @@ namespace AutoWash.Application.Services
 
             // Chuẩn hóa giống BookingService để tránh trùng biển số do khác hoa/thường hoặc khoảng trắng.
             var cleanPlate = request.LicensePlate.Trim().ToUpper();
-
-            // BR-10: verify OTP
-            if (!_otpService.Verify(customer.Phone, request.OtpCode))
-                throw new Exception("INVALID_OTP: Mã OTP không hợp lệ hoặc đã hết hạn.");
 
             // BR-09: UNIQUE (CustomerID, LicensePlate)
             var exists = await _context.Vehicles.AnyAsync(v =>
@@ -84,10 +78,6 @@ namespace AutoWash.Application.Services
 
             // Chuẩn hóa giống BookingService để tránh trùng biển số do khác hoa/thường hoặc khoảng trắng.
             var cleanPlate = request.LicensePlate.Trim().ToUpper();
-
-            // BR-10: verify OTP
-            if (!_otpService.Verify(customer.Phone, request.OtpCode))
-                throw new Exception("INVALID_OTP: Mã OTP không hợp lệ hoặc đã hết hạn.");
 
             // BR-09: check duplicate trong cùng tài khoản
             var duplicate = await _context.Vehicles.AnyAsync(v =>

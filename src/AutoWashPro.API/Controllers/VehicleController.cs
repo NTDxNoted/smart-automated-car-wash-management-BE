@@ -12,14 +12,10 @@ namespace AutoWashPro.API.Controllers
     public class VehicleController : ControllerBase
     {
         private readonly IVehicleService _vehicleService;
-        private readonly ICustomerService _customerService;
-        private readonly IOtpService _otpService;
 
-        public VehicleController(IVehicleService vehicleService, ICustomerService customerService, IOtpService otpService)
+        public VehicleController(IVehicleService vehicleService)
         {
             _vehicleService = vehicleService;
-            _customerService = customerService;
-            _otpService = otpService;
         }
 
         // BR-07: Chặn Guest
@@ -44,25 +40,6 @@ namespace AutoWashPro.API.Controllers
             return Ok(new { data = vehicles });
         }
 
-        // POST /api/vehicles/request-otp — BR-10: sinh OTP, log ra console
-        [HttpPost("request-otp")]
-        public async Task<IActionResult> RequestOtp()
-        {
-            var authError = CheckMemberAccess(out int customerId);
-            if (authError != null) return authError;
-
-            try
-            {
-                var profile = await _customerService.GetProfileAsync(customerId);
-                _otpService.GenerateAndStore(profile.Phone);
-                return Ok(new { message = "OTP đã được gửi về số điện thoại của bạn." });
-            }
-            catch (Exception ex) when (ex.Message.StartsWith("NOT_FOUND"))
-            {
-                return NotFound(new { message = ex.Message });
-            }
-        }
-
         // POST /api/vehicles
         [HttpPost]
         public async Task<IActionResult> AddVehicle([FromBody] AddVehicleRequest request)
@@ -82,10 +59,6 @@ namespace AutoWashPro.API.Controllers
             catch (Exception ex) when (ex.Message.StartsWith("INVALID_LICENSE_PLATE"))
             {
                 return BadRequest(new { error = "INVALID_LICENSE_PLATE", message = ex.Message });
-            }
-            catch (Exception ex) when (ex.Message.StartsWith("INVALID_OTP"))
-            {
-                return BadRequest(new { error = "INVALID_OTP", message = ex.Message });
             }
             catch (Exception ex) when (ex.Message.StartsWith("NOT_FOUND"))
             {
@@ -112,10 +85,6 @@ namespace AutoWashPro.API.Controllers
             catch (Exception ex) when (ex.Message.StartsWith("INVALID_LICENSE_PLATE"))
             {
                 return BadRequest(new { error = "INVALID_LICENSE_PLATE", message = ex.Message });
-            }
-            catch (Exception ex) when (ex.Message.StartsWith("INVALID_OTP"))
-            {
-                return BadRequest(new { error = "INVALID_OTP", message = ex.Message });
             }
             catch (Exception ex) when (ex.Message.StartsWith("NOT_FOUND"))
             {
