@@ -63,21 +63,37 @@ namespace AutoWash.Application.Services
             var customers = await _context.Customers.Where(c => customerIds.Contains(c.CustomerID)).ToDictionaryAsync(c => c.CustomerID, c => c.FullName);
             var services = await _context.Services.Where(s => serviceIds.Contains(s.ServiceID)).ToDictionaryAsync(s => s.ServiceID, s => s.ServiceName);
 
-            return bookings.Select(b => new AdminBookingListResponse
+            var bookingIds = bookings.Select(b => b.BookingID).ToList();
+            var transactions = await _context.Transactions
+                .Where(t => bookingIds.Contains(t.BookingID))
+                .ToDictionaryAsync(t => t.BookingID, t => t);
+
+            return bookings.Select(b =>
             {
-                BookingID = b.BookingID,
-                CustomerID = b.CustomerID,
-                CustomerName = customers.ContainsKey(b.CustomerID) ? customers[b.CustomerID] : "Guest",
-                Phone = b.Phone,
-                VehicleID = b.VehicleID,
-                LicensePlate = b.LicensePlate,
-                ServiceID = b.ServiceID,
-                ServiceName = services.ContainsKey(b.ServiceID) ? services[b.ServiceID] : "Unknown Service",
-                ScheduledTime = b.ScheduledTime,
-                CheckInTime = b.CheckInTime,
-                Status = b.Status.ToString(),
-                TotalPrice = b.FinalAmount,
-                CreatedAt = b.CreatedAt
+                transactions.TryGetValue(b.BookingID, out var transaction);
+                return new AdminBookingListResponse
+                {
+                    BookingID = b.BookingID,
+                    CustomerID = b.CustomerID,
+                    CustomerName = customers.ContainsKey(b.CustomerID) ? customers[b.CustomerID] : "Guest",
+                    Phone = b.Phone,
+                    VehicleID = b.VehicleID,
+                    LicensePlate = b.LicensePlate,
+                    ServiceID = b.ServiceID,
+                    ServiceName = services.ContainsKey(b.ServiceID) ? services[b.ServiceID] : "Unknown Service",
+                    ScheduledTime = b.ScheduledTime,
+                    CheckInTime = b.CheckInTime,
+                    Status = b.Status.ToString(),
+                    TotalPrice = b.FinalAmount,
+                    BaseAmount = b.BaseAmount,
+                    DiscountApplied = b.DiscountApplied,
+                    FinalAmount = b.FinalAmount,
+                    PointsEarned = b.PointsEarned,
+                    PaymentStatus = transaction?.Status.ToString(),
+                    PaymentMethod = transaction?.PaymentMethod.ToString(),
+                    PaymentAt = transaction?.PaidAt,
+                    CreatedAt = b.CreatedAt
+                };
             });
         }
 
@@ -88,6 +104,7 @@ namespace AutoWash.Application.Services
 
             var customer = await _context.Customers.FindAsync(booking.CustomerID);
             var service = await _context.Services.FindAsync(booking.ServiceID);
+            var transaction = await _context.Transactions.FirstOrDefaultAsync(t => t.BookingID == booking.BookingID);
 
             return new AdminBookingListResponse
             {
@@ -103,6 +120,13 @@ namespace AutoWash.Application.Services
                 CheckInTime = booking.CheckInTime,
                 Status = booking.Status.ToString(),
                 TotalPrice = booking.FinalAmount,
+                BaseAmount = booking.BaseAmount,
+                DiscountApplied = booking.DiscountApplied,
+                FinalAmount = booking.FinalAmount,
+                PointsEarned = booking.PointsEarned,
+                PaymentStatus = transaction?.Status.ToString(),
+                PaymentMethod = transaction?.PaymentMethod.ToString(),
+                PaymentAt = transaction?.PaidAt,
                 CreatedAt = booking.CreatedAt
             };
         }
