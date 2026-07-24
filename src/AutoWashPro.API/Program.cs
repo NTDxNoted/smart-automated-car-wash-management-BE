@@ -40,7 +40,12 @@ builder.Services.AddInfrastructureServices(builder.Configuration);
 builder.Services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
 
 // ISSUE-01: Authentication & Authorization
-var jwtSecretKey = builder.Configuration["Jwt:SecretKey"];
+var jwtSecretKey = Environment.GetEnvironmentVariable("JWT_SECRET_KEY") ?? builder.Configuration["Jwt:SecretKey"];
+if (string.IsNullOrWhiteSpace(jwtSecretKey))
+{
+    jwtSecretKey = "AutoWashPro_SecretKey_2025_MustBe32CharsLong!!";
+}
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
