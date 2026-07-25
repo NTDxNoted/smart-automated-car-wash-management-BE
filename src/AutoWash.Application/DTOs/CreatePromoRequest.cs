@@ -42,6 +42,9 @@ namespace AutoWash.Application.DTOs
         [Required(ErrorMessage = "Tiêu đề không được để trống")]
         public string Title { get; set; } = string.Empty;
 
+        [Required(ErrorMessage = "Mã khuyến mãi không được để trống")]
+        public string PromoCode { get; set; } = string.Empty;
+
         public int? MinTierID { get; set; }
 
         [Required(ErrorMessage = "Loại giảm giá không được để trống")]

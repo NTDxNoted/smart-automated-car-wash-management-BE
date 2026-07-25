@@ -154,7 +154,14 @@ namespace AutoWash.Application.Services
             if (request.DiscountType == "Percentage" && request.DiscountValue > 100)
                 throw new ArgumentException("PROMO_INVALID_PERCENTAGE");
 
+            var newCode = request.PromoCode.Trim().ToUpper();
+            var codeUsedByAnotherPromo = await _dbContext.Promotions
+                .AnyAsync(p => p.PromotionID != id && p.PromoCode.ToLower() == newCode.ToLower());
+            if (codeUsedByAnotherPromo)
+                throw new ArgumentException("PROMO_CODE_EXISTS");
+
             promo.Title = request.Title.Trim();
+            promo.PromoCode = newCode;
             promo.MinTierID = request.MinTierID;
             promo.DiscountType = request.DiscountType;
             promo.DiscountValue = request.DiscountValue;

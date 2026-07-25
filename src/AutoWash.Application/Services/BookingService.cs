@@ -369,7 +369,8 @@ namespace AutoWash.Application.Services
                 if (promotion == null)
                     throw new Exception("PROMO_NOT_FOUND: Mã khuyến mãi không tồn tại.");
 
-                if (promotion.StartDate > DateTime.UtcNow.Date || promotion.EndDate < DateTime.UtcNow.Date)
+                var promoLocalToday = DateTime.UtcNow.AddHours(7).Date;
+                if (promoLocalToday < promotion.StartDate.Date || promoLocalToday > promotion.EndDate.Date)
                     throw new Exception("PROMO_EXPIRED: Mã khuyến mãi đã hết hạn.");
 
                 if (customer != null && promotion.MinTierID.HasValue && customer.TierID < promotion.MinTierID.Value)
