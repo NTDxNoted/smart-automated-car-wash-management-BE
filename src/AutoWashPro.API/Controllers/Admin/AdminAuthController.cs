@@ -1,6 +1,7 @@
 using AutoWash.Application.DTOs;
 using AutoWash.Application.Interfaces;
 using AutoWashPro.API.Middleware;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System;
@@ -69,6 +70,33 @@ namespace AutoWashPro.API.Controllers.Admin
             }
         }
 
+        [HttpPost("auth/logout")]
+        [Authorize]
+        public async Task<IActionResult> Logout()
+        {
+            try
+            {
+                var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                            ?? User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
+
+                if (string.IsNullOrEmpty(claim) || !int.TryParse(claim, out int adminId))
+                {
+                    return Unauthorized(new { error = "SESSION_EXPIRED", message = "Phiên đăng nhập không hợp lệ" });
+                }
+
+                await _adminAuthService.LogoutAsync(adminId);
+                return Ok(new { message = "Đăng xuất thành công" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, new
+                {
+                    error = "INTERNAL_SERVER_ERROR",
+                    message = ex.Message
+                });
+            }
+        }
+
         // 2. GET /api/admin/profile
         [HttpGet("profile")]
         [AuthorizeAdmin] // Protected with Admin privilege filter
@@ -78,7 +106,7 @@ namespace AutoWashPro.API.Controllers.Admin
         {
             try
             {
-                var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value 
+                var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
                             ?? User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
 
                 if (string.IsNullOrEmpty(claim) || !int.TryParse(claim, out int adminId))

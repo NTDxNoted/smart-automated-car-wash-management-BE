@@ -126,6 +126,8 @@ namespace AutoWash.Application.Services
 
       // Tier là [NotMapped] trên Customer nên phải resolve tên tier từ TierID mỗi lần load lại từ DB
       customer.Tier = await ResolveTierNameAsync(customer.TierID);
+      customer.ActiveSessionId = Guid.NewGuid().ToString("N");
+      await _dbContext.SaveChangesAsync();
 
       var token = GenerateJwtToken(customer);
 
@@ -175,7 +177,8 @@ namespace AutoWash.Application.Services
                 new Claim(ClaimTypes.Name, customer.FullName),
                 new Claim("phone", customer.Phone),
                 new Claim("tier", customer.Tier),
-                new Claim(ClaimTypes.Role, customer.Role)
+                new Claim(ClaimTypes.Role, customer.Role),
+                new Claim("SessionId", customer.ActiveSessionId ?? string.Empty)
             };
 
       var token = new JwtSecurityToken(
@@ -187,6 +190,16 @@ namespace AutoWash.Application.Services
       );
 
       return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    public async Task LogoutAsync(int customerId)
+    {
+      var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.CustomerID == customerId);
+      if (customer == null)
+        return;
+
+      customer.ActiveSessionId = null;
+      await _dbContext.SaveChangesAsync();
     }
 
     public Task<bool> ValidateTokenAsync(string token)

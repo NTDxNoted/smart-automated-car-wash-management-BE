@@ -7,5 +7,6 @@ namespace AutoWash.Application.Interfaces
     {
         Task<AdminLoginResponse> LoginAsync(AdminLoginRequest request);
         Task<AdminProfileResponse> GetProfileAsync(int adminId);
+        Task LogoutAsync(int adminId);
     }
 }

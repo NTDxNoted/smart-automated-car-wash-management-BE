@@ -20,6 +20,7 @@ namespace AutoWash.Domain.Entities
         public DateTime? LastVisit { get; set; }
         public bool IsLocked { get; set; }
         public DateTime? SuspendedUntil { get; set; }
+        public string? ActiveSessionId { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         public LoyaltyAccount? LoyaltyAccount { get; set; }
