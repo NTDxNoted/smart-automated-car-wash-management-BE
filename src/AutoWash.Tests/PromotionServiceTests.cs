@@ -327,6 +327,7 @@ namespace AutoWash.Tests.Application.Services
             var request = new UpdatePromoRequest
             {
                 Title = "Existing Promo",
+                PromoCode = "EXIST01",
                 DiscountType = "Percentage",
                 DiscountValue = 150m,
                 StartDate = DateTime.UtcNow,
@@ -338,6 +339,89 @@ namespace AutoWash.Tests.Application.Services
                 () => service.UpdatePromotionAsync(promo.PromotionID, request));
             Assert.Equal("PROMO_INVALID_PERCENTAGE", exception.Message);
             Assert.Equal(10m, promo.DiscountValue); // không bị thay đổi khi request không hợp lệ
+        }
+
+        [Fact]
+        public async Task UpdatePromotionAsync_WithNewPromoCode_ShouldPersistPromoCode()
+        {
+            var dbContext = CreateDbContext();
+            var service = new PromotionService(dbContext);
+
+            var promo = new Promotion
+            {
+                PromotionID = 1,
+                Title = "Existing Promo",
+                PromoCode = "OLDCODE",
+                DiscountType = "Percentage",
+                DiscountValue = 10m,
+                StartDate = DateTime.UtcNow,
+                EndDate = DateTime.UtcNow.AddDays(5),
+                IsActive = true
+            };
+            dbContext.Promotions.Add(promo);
+            await dbContext.SaveChangesAsync();
+
+            var request = new UpdatePromoRequest
+            {
+                Title = "Existing Promo",
+                PromoCode = "newcode",
+                DiscountType = "Percentage",
+                DiscountValue = 10m,
+                StartDate = DateTime.UtcNow,
+                EndDate = DateTime.UtcNow.AddDays(5),
+                IsActive = true
+            };
+
+            var result = await service.UpdatePromotionAsync(promo.PromotionID, request);
+
+            Assert.Equal("NEWCODE", result.PromoCode);
+        }
+
+        [Fact]
+        public async Task UpdatePromotionAsync_WithPromoCodeUsedByAnotherPromo_ShouldThrowPROMO_CODE_EXISTS()
+        {
+            var dbContext = CreateDbContext();
+            var service = new PromotionService(dbContext);
+
+            dbContext.Promotions.AddRange(
+                new Promotion
+                {
+                    PromotionID = 1,
+                    Title = "Promo A",
+                    PromoCode = "CODEA",
+                    DiscountType = "Percentage",
+                    DiscountValue = 10m,
+                    StartDate = DateTime.UtcNow,
+                    EndDate = DateTime.UtcNow.AddDays(5),
+                    IsActive = true
+                },
+                new Promotion
+                {
+                    PromotionID = 2,
+                    Title = "Promo B",
+                    PromoCode = "CODEB",
+                    DiscountType = "Percentage",
+                    DiscountValue = 15m,
+                    StartDate = DateTime.UtcNow,
+                    EndDate = DateTime.UtcNow.AddDays(5),
+                    IsActive = true
+                });
+            await dbContext.SaveChangesAsync();
+
+            var request = new UpdatePromoRequest
+            {
+                Title = "Promo B",
+                PromoCode = "codea",
+                DiscountType = "Percentage",
+                DiscountValue = 15m,
+                StartDate = DateTime.UtcNow,
+                EndDate = DateTime.UtcNow.AddDays(5),
+                IsActive = true
+            };
+
+            var exception = await Assert.ThrowsAsync<ArgumentException>(
+                () => service.UpdatePromotionAsync(2, request));
+            Assert.Equal("PROMO_CODE_EXISTS", exception.Message);
         }
     }
 }
