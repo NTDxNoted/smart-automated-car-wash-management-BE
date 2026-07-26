@@ -62,7 +62,7 @@ namespace AutoWashPro.API.Middleware
         {
             context.Response.StatusCode = statusCode;
             context.Response.ContentType = "application/json";
-            return context.Response.WriteAsJsonAsync(new { error, message });
+            return context.Response.WriteAsJsonAsync(new { error, message }, cancellationToken: context.RequestAborted);
         }
     }
 
