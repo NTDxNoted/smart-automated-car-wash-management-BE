@@ -53,7 +53,7 @@
 ### BR-41 (State Reversibility Constraint): Trạng thái đơn hàng không được phép cập nhật ngược hoặc thay đổi sau khi đã đạt trạng thái cuối (Completed, Failed, Cancelled, No-show).
 ### BR-42 (Live Tracking Broadcast): Trạng thái đơn hàng phải được Admin cập nhật kịp thời để khách hàng có thể theo dõi tiến độ thực tế tại quầy.  
 ### BR-43 (Emergency Stop Log): Mọi quy trình vận hành gặp lỗi kỹ thuật hoặc nhân viên nhấn nút "Dừng khẩn cấp" tại quầy phải được hệ thống ghi log ngoại lệ và gửi cảnh báo ngay lập tức về màn hình của Admin.  
-### BR-44 (License Plate Verification): Khi xe đến trạm, Admin/Nhân viên phải đối soát biển số thực tế. Nếu phát hiện sai lệch so với lịch đặt, Admin có quyền chỉnh sửa lại biển số hoặc chuyển đơn hàng thành Failed (Thất bại).  V
+### BR-44 (License Plate Verification): Khi xe đến trạm, Admin/Nhân viên phải đối soát biển số thực tế. Nếu phát hiện sai lệch so với lịch đặt hoặc phát sinh sự cố, Admin có quyền chuyển đơn hàng từ Pending sang Cancelled (Đã hủy) hoặc Failed (Thất bại).  
 ## I. Quy trình Thanh toán Offline tại quầy (Offline Payment Rules)
 ### BR-45 (Payment Methods Available): Hệ thống chỉ hỗ trợ ghi nhận hai hình thức thanh toán trực tiếp tại quầy: Tiền mặt (Cash) hoặc Chuyển khoản ngân hàng thủ công (Transfer).  
 ### BR-46 (Payment Timestamping): Hệ thống bắt buộc phải tự động ghi lại chính xác thời gian (PaymentTimestamp) ngay khi Admin bấm xác nhận thanh toán thành công.  
