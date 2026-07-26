@@ -10,7 +10,7 @@
 ### BR-06 (Password Security): Mật khẩu của Member phải được mã hóa bằng thuật toán Bcrypt trước khi lưu vào Database.  
 ### BR-07 (Vehicle Profile): Khách hàng vãng lai (Guest) không được lưu trữ thông tin xe vào hệ thống.  
 ### BR-08 (Unlimited Vehicles): Khách hàng thành viên (Member) được phép lưu trữ không giới hạn số lượng xe vào hồ sơ cá nhân để chọn nhanh khi đặt lịch, hoặc tự nhập biển số xe mới trực tiếp tại màn hình đặt lịch.
-### BR-08.1 (Vietnamese License Plate Format Validation): Mọi biển số xe nhập vào (khi thêm xe vào Profile hoặc đặt lịch trực tiếp) phải tuân thủ định dạng biển số xe Việt Nam (VD: 30F-123.45, 51A12345). Ký tự sẽ được tự động viết hoa và chặn văn bản rác.  
+### BR-08.1 (Vietnamese License Plate Uniqueness): Mọi biển số xe phải tuân thủ định dạng biển số xe Việt Nam (VD: 30F-123.45, 51A12345). Do quy chuẩn cấu trúc biển số xe tại Việt Nam độc lập tuyệt đối giữa Ô tô và Xe máy (không bao giờ trùng lặp), hệ thống tự động định danh phương tiện qua Biển số xe mà không cần phân loại thủ công.  
 ### BR-09 (Vehicle Decoupling): Một biển số xe có thể được lưu trữ trong danh sách xe của nhiều tài khoản Member khác nhau (ví dụ: các thành viên trong gia đình dùng chung xe).  
 ### BR-10 (OTP Verification): Khi Member thực hiện thêm xe mới hoặc thay đổi biển số xe trong Profile, hệ thống yêu cầu xác thực qua mã OTP gửi về SĐT (Mô phỏng logic ứng dụng).  
 ### BR-11 (Data Isolation): Khách hàng chỉ có quyền xem, chỉnh sửa thông tin hồ sơ, ví điểm và lịch sử đặt lịch của chính mình.  
