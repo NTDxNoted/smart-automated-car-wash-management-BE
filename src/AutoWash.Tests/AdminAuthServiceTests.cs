@@ -7,6 +7,8 @@ using AutoWash.Domain.Entities;
 using AutoWash.Infrastructure.Data;
 using System;
 using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace AutoWash.Tests.Application.Services
@@ -75,6 +77,49 @@ namespace AutoWash.Tests.Application.Services
             Assert.Equal("Admin", result.Role);
             Assert.NotEmpty(result.Token);
             Assert.Equal(admin.CustomerID, result.AdminId);
+        }
+
+        [Fact]
+        public async Task LoginAsync_WithValidAdminCredentials_ShouldPersistSessionIdAndEmitClaim()
+        {
+            // Arrange
+            var dbContext = CreateDbContext();
+            var config = CreateConfiguration();
+            var adminAuthService = new AdminAuthService(dbContext, config);
+
+            var password = "password123";
+            var hashedPassword = BCrypt.Net.BCrypt.HashPassword(password);
+
+            var admin = new Customer
+            {
+                FullName = "Super Admin",
+                Phone = "0999999991",
+                Password = hashedPassword,
+                Role = "ADMIN",
+                IsLocked = false,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            dbContext.Customers.Add(admin);
+            await dbContext.SaveChangesAsync();
+
+            var loginRequest = new AdminLoginRequest
+            {
+                Phone = "0999999991",
+                Password = password
+            };
+
+            // Act
+            var result = await adminAuthService.LoginAsync(loginRequest);
+
+            // Assert
+            var persistedAdmin = await dbContext.Customers.FirstAsync(c => c.CustomerID == admin.CustomerID);
+            Assert.False(string.IsNullOrWhiteSpace(persistedAdmin.ActiveSessionId));
+
+            var jwtToken = new JwtSecurityTokenHandler().ReadJwtToken(result.Token);
+            var sessionClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == "SessionId");
+            Assert.NotNull(sessionClaim);
+            Assert.Equal(persistedAdmin.ActiveSessionId, sessionClaim!.Value);
         }
 
         [Fact]

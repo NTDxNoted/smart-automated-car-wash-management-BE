@@ -56,6 +56,9 @@ namespace AutoWash.Application.Services
             if (!BCrypt.Net.BCrypt.Verify(request.Password, customer.Password))
                 throw new UnauthorizedAccessException("INVALID_CREDENTIALS");
 
+            customer.ActiveSessionId = Guid.NewGuid().ToString("N");
+            await _dbContext.SaveChangesAsync();
+
             var token = GenerateJwtToken(customer);
 
             return new AdminLoginResponse
@@ -85,6 +88,16 @@ namespace AutoWash.Application.Services
             };
         }
 
+        public async Task LogoutAsync(int adminId)
+        {
+            var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.CustomerID == adminId);
+            if (customer == null)
+                return;
+
+            customer.ActiveSessionId = null;
+            await _dbContext.SaveChangesAsync();
+        }
+
         private string GenerateJwtToken(Customer customer)
         {
             var jwtSecretKey = _configuration["Jwt:SecretKey"];
@@ -106,7 +119,8 @@ namespace AutoWash.Application.Services
                 new Claim(ClaimTypes.Name, customer.FullName),
                 new Claim("role", "ADMIN"),
                 new Claim(ClaimTypes.Role, "ADMIN"),
-                new Claim("phone", customer.Phone)
+                new Claim("phone", customer.Phone),
+                new Claim("SessionId", customer.ActiveSessionId ?? string.Empty)
             };
 
             var token = new JwtSecurityToken(

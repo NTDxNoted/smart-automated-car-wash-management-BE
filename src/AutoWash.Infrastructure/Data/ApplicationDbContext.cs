@@ -69,6 +69,7 @@ namespace AutoWash.Infrastructure.Data
                 entity.Property(e => e.LastVisit).HasColumnName("lastvisit");
                 entity.Property(e => e.IsLocked).HasColumnName("islocked");
                 entity.Property(e => e.SuspendedUntil).HasColumnName("suspendeduntil");
+                entity.Property(e => e.ActiveSessionId).HasColumnName("activesessionid");
                 entity.Property(e => e.CreatedAt).HasColumnName("createdat");
 
                 entity.HasIndex(e => e.Phone).IsUnique();

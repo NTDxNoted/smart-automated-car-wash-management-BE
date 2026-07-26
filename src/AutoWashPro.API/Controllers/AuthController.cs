@@ -1,8 +1,10 @@
 using AutoWash.Application.DTOs;
 using AutoWash.Application.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 
 namespace AutoWashPro.API.Controllers
@@ -68,6 +70,36 @@ namespace AutoWashPro.API.Controllers
       {
         _logger.LogError(ex, "Registration error");
 
+        return StatusCode(500, new ErrorResponse
+        {
+          Error = "INTERNAL_SERVER_ERROR",
+          Message = "Đã có lỗi xảy ra, vui lòng thử lại sau."
+        });
+      }
+    }
+
+    [HttpPost("logout")]
+    [Authorize]
+    public async Task<IActionResult> Logout()
+    {
+      try
+      {
+        var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(claim) || !int.TryParse(claim, out var customerId))
+        {
+          return Unauthorized(new ErrorResponse
+          {
+            Error = "SESSION_EXPIRED",
+            Message = "Phiên đăng nhập không hợp lệ"
+          });
+        }
+
+        await _authService.LogoutAsync(customerId);
+        return Ok(new { message = "Đăng xuất thành công" });
+      }
+      catch (Exception ex)
+      {
+        _logger.LogError(ex, "Logout error");
         return StatusCode(500, new ErrorResponse
         {
           Error = "INTERNAL_SERVER_ERROR",

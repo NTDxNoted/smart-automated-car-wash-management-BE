@@ -9,6 +9,7 @@ using AutoWash.Infrastructure.Data;
 using System;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using Microsoft.Extensions.Configuration;
 
@@ -151,6 +152,49 @@ namespace AutoWash.Tests.Application.Services
       Assert.Equal("Member", result.Tier);
       Assert.NotEmpty(result.Token);
       Assert.False(result.IsLocked);
+    }
+
+    [Fact]
+    public async Task LoginAsync_WithValidCredentials_ShouldPersistSessionIdAndEmitClaim()
+    {
+      // Arrange
+      var dbContext = CreateDbContext();
+      var config = CreateConfiguration();
+      var authService = new AuthService(dbContext, config);
+
+      var password = "Password123";
+      var hashedPassword = BCrypt.Net.BCrypt.HashPassword(password);
+
+      var customer = new Customer
+      {
+        FullName = "Test User",
+        Phone = "0901234567",
+        Password = hashedPassword,
+        Tier = "1",
+        IsLocked = false,
+        CreatedAt = DateTime.UtcNow
+      };
+
+      dbContext.Customers.Add(customer);
+      await dbContext.SaveChangesAsync();
+
+      var loginRequest = new LoginRequest
+      {
+        Phone = "0901234567",
+        Password = password
+      };
+
+      // Act
+      var result = await authService.LoginAsync(loginRequest);
+
+      // Assert
+      var persistedCustomer = await dbContext.Customers.FirstAsync(c => c.CustomerID == customer.CustomerID);
+      Assert.False(string.IsNullOrWhiteSpace(persistedCustomer.ActiveSessionId));
+
+      var jwtToken = new JwtSecurityTokenHandler().ReadJwtToken(result.Token);
+      var sessionClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == "SessionId");
+      Assert.NotNull(sessionClaim);
+      Assert.Equal(persistedCustomer.ActiveSessionId, sessionClaim!.Value);
     }
 
     [Fact]

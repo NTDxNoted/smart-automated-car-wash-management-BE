@@ -27,6 +27,11 @@ namespace AutoWash.Application.Interfaces
     Task<bool> ValidateTokenAsync(string token);
 
     /// <summary>
+    /// Logs out the current customer session by clearing the active session id.
+    /// </summary>
+    Task LogoutAsync(int customerId);
+
+    /// <summary>
     /// Gets customer ID from JWT token
     /// </summary>
     /// <param name="token">JWT token</param>
