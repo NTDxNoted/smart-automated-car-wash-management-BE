@@ -22,7 +22,7 @@ namespace AutoWashPro.API.Middleware
         public JwtMiddleware(RequestDelegate next, IConfiguration configuration, IApplicationDbContext dbContext)
         {
             _next = next;
-            _jwtKey = configuration["Jwt:SecretKey"]
+            _jwtKey = Environment.GetEnvironmentVariable("JWT_SECRET_KEY") ?? configuration["Jwt:SecretKey"]
                 ?? throw new InvalidOperationException("Jwt:SecretKey is not configured.");
             _dbContext = dbContext;
         }
@@ -40,7 +40,7 @@ namespace AutoWashPro.API.Middleware
                     {
                         error = "SESSION_EXPIRED",
                         message = "Tài khoản của bạn đã được đăng nhập từ một thiết bị khác. Vui lòng đăng nhập lại."
-                    });
+                    }, cancellationToken: context.RequestAborted);
                     return;
                 }
             }
