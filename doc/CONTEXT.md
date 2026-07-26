@@ -34,7 +34,7 @@
 ### BR-26 (Member Quota): Một tài khoản Member được phép có tối đa 03 lịch hẹn ở trạng thái Pending tại một thời điểm (để phục vụ nhu cầu rửa nhiều xe của gia đình hoặc công ty).
 ### BR-27 (Daily Limit): Một tài khoản (cả Guest và Member) không được phép có quá 02 lịch hẹn ở trạng thái "Chưa hoàn thành" trong cùng một ngày.  
 ### BR-28 (Time Buffer Per Vehicle): Cùng một biển số xe không được phép có 2 lịch hẹn cách nhau dưới 120 phút để tránh việc đặt trùng hoặc giữ chỗ ảo.  
-### BR-29 (Advance Notice Time): Thời gian đặt lịch trực tuyến tối thiểu phải trước 120 phút (2 tiếng) so với giờ hẹn.  
+### BR-29 (Advance Notice Time): Thời gian đặt lịch trực tuyến tối thiểu phải trước 60 phút (1 tiếng) so với giờ hẹn.  
 ### BR-30 (Station Buffer Time): Hệ thống tự động chèn khoảng nghỉ 5 phút sau mỗi ca rửa xe để nhân viên vệ sinh trạm và chuẩn bị dụng cụ.  
 ### BR-31 (Station Capacity): Một trạm rửa xe tại một thời điểm chỉ xử lý duy nhất 01 xe; lịch hẹn chỉ được chuyển sang Pending hoặc Confirmed nếu khung giờ đó còn trống.  
 ### BR-32 (Maintenance Mode): Trạm rửa xe hoặc dịch vụ được Admin chuyển sang trạng thái "Bảo trì" hoặc "Tạm khóa" sẽ không tiếp nhận bất kỳ lịch đặt mới nào.  
