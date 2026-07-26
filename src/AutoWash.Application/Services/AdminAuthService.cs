@@ -100,7 +100,7 @@ namespace AutoWash.Application.Services
 
         private string GenerateJwtToken(Customer customer)
         {
-            var jwtSecretKey = _configuration["Jwt:SecretKey"];
+            var jwtSecretKey = Environment.GetEnvironmentVariable("JWT_SECRET_KEY") ?? _configuration["Jwt:SecretKey"];
 
             if (string.IsNullOrWhiteSpace(jwtSecretKey))
                 throw new InvalidOperationException("JWT SecretKey chưa được cấu hình");

@@ -157,13 +157,17 @@ namespace AutoWash.Application.Services
       return tierName ?? (tierId == 1 ? "Member" : tierId.ToString());
     }
 
-    private string GenerateJwtToken(Customer customer)
+    private string GetJwtSecretKey()
     {
       var jwtSecretKey = Environment.GetEnvironmentVariable("JWT_SECRET_KEY") ?? _configuration["Jwt:SecretKey"];
-
       if (string.IsNullOrWhiteSpace(jwtSecretKey))
-        throw new InvalidOperationException("JWT SecretKey chưa được cấu hình");
+        throw new InvalidOperationException("JWT SecretKey is not configured.");
+      return jwtSecretKey;
+    }
 
+    private string GenerateJwtToken(Customer customer)
+    {
+      var jwtSecretKey = GetJwtSecretKey();
       var jwtIssuer = _configuration["Jwt:Issuer"] ?? "AutoWashAPI";
       var jwtAudience = _configuration["Jwt:Audience"] ?? "AutoWashClient";
       var jwtExpiryMinutes = int.Parse(_configuration["Jwt:ExpiryMinutes"] ?? "1440");
@@ -204,9 +208,15 @@ namespace AutoWash.Application.Services
 
     public Task<bool> ValidateTokenAsync(string token)
     {
-      var jwtSecretKey = _configuration["Jwt:SecretKey"];
-      if (string.IsNullOrWhiteSpace(jwtSecretKey))
+      string jwtSecretKey;
+      try
+      {
+        jwtSecretKey = GetJwtSecretKey();
+      }
+      catch
+      {
         return Task.FromResult(false);
+      }
 
       var jwtIssuer = _configuration["Jwt:Issuer"] ?? "AutoWashAPI";
       var jwtAudience = _configuration["Jwt:Audience"] ?? "AutoWashClient";
