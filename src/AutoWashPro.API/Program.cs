@@ -106,8 +106,6 @@ builder.Services.AddScoped<VehicleRepository>();
 builder.Services.AddScoped<IAdminCustomerService, AdminCustomerService>();
 //.Services.AddScoped<AutoWashPro.API.Filters.BookingFinancialProtectionFilter>();
 
-builder.Services.AddSingleton<IOtpService, OtpService>();
-
 // ISSUE-11: Tier Upgrade/Downgrade
 builder.Services.AddScoped<ITierService, TierService>();
 builder.Services.AddScoped<TierRepository>();
