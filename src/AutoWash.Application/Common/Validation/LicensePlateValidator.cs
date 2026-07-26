@@ -1,3 +1,4 @@
+using System;
 using System.Text.RegularExpressions;
 
 namespace AutoWash.Application.Common.Validation
@@ -8,7 +9,8 @@ namespace AutoWash.Application.Common.Validation
     {
         private static readonly Regex Pattern = new(
             @"^[0-9]{2}[A-Z0-9]{1,3}[-.\s]?[0-9]{3,5}(?:[.\s][0-9]{2})?$",
-            RegexOptions.Compiled);
+            RegexOptions.Compiled,
+            TimeSpan.FromMilliseconds(100));
 
         public static bool IsValid(string? licensePlate)
         {
