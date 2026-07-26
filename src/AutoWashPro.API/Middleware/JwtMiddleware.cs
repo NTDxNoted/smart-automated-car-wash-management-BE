@@ -72,7 +72,7 @@ namespace AutoWashPro.API.Middleware
                     return false;
                 }
 
-                var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.CustomerID == userId);
+                var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.CustomerID == userId, context.RequestAborted);
                 if (customer == null || string.IsNullOrWhiteSpace(customer.ActiveSessionId))
                 {
                     return false;
