@@ -17,17 +17,15 @@ namespace AutoWashPro.API.Middleware
     {
         private readonly RequestDelegate _next;
         private readonly string _jwtKey;
-        private readonly IApplicationDbContext _dbContext;
 
-        public JwtMiddleware(RequestDelegate next, IConfiguration configuration, IApplicationDbContext dbContext)
+        public JwtMiddleware(RequestDelegate next, IConfiguration configuration)
         {
             _next = next;
             _jwtKey = Environment.GetEnvironmentVariable("JWT_SECRET_KEY") ?? configuration["Jwt:SecretKey"]
                 ?? throw new InvalidOperationException("Jwt:SecretKey is not configured.");
-            _dbContext = dbContext;
         }
 
-        public async Task InvokeAsync(HttpContext context)
+        public async Task InvokeAsync(HttpContext context, IApplicationDbContext dbContext)
         {
             var path = context.Request.Path.Value ?? "";
             if (path.StartsWith("/api/auth/login", StringComparison.OrdinalIgnoreCase) ||
@@ -41,7 +39,7 @@ namespace AutoWashPro.API.Middleware
             var token = context.Request.Headers["Authorization"].FirstOrDefault()?.Split(" ").Last();
             if (!string.IsNullOrWhiteSpace(token))
             {
-                var attached = await AttachUserAsync(context, token);
+                var attached = await AttachUserAsync(context, dbContext, token);
                 if (!attached)
                 {
                     context.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -57,7 +55,7 @@ namespace AutoWashPro.API.Middleware
             await _next(context);
         }
 
-        private async Task<bool> AttachUserAsync(HttpContext context, string token)
+        private async Task<bool> AttachUserAsync(HttpContext context, IApplicationDbContext dbContext, string token)
         {
             try
             {
@@ -85,7 +83,7 @@ namespace AutoWashPro.API.Middleware
                     return false;
                 }
 
-                var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.CustomerID == userId, context.RequestAborted);
+                var customer = await dbContext.Customers.FirstOrDefaultAsync(c => c.CustomerID == userId, context.RequestAborted);
                 if (customer == null || string.IsNullOrWhiteSpace(customer.ActiveSessionId))
                 {
                     return false;

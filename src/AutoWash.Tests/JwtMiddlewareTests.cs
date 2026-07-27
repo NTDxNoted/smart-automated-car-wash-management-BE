@@ -84,12 +84,12 @@ namespace AutoWash.Tests.Application.Services
         await Task.CompletedTask;
       };
 
-      var middleware = new JwtMiddleware(next, configuration, dbContext);
+      var middleware = new JwtMiddleware(next, configuration);
       var context = new DefaultHttpContext();
       context.Request.Headers.Authorization = $"Bearer {CreateToken(customer.CustomerID, "token-session-id", configuration["Jwt:SecretKey"])}";
       context.Response.Body = new MemoryStream();
 
-      await middleware.InvokeAsync(context);
+      await middleware.InvokeAsync(context, dbContext);
 
       Assert.False(nextCalled);
       Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
@@ -124,11 +124,11 @@ namespace AutoWash.Tests.Application.Services
         await Task.CompletedTask;
       };
 
-      var middleware = new JwtMiddleware(next, configuration, dbContext);
+      var middleware = new JwtMiddleware(next, configuration);
       var context = new DefaultHttpContext();
       context.Request.Headers.Authorization = $"Bearer {CreateToken(customer.CustomerID, "matching-session-id", configuration["Jwt:SecretKey"])}";
 
-      await middleware.InvokeAsync(context);
+      await middleware.InvokeAsync(context, dbContext);
 
       Assert.True(nextCalled);
       Assert.NotNull(context.User);
