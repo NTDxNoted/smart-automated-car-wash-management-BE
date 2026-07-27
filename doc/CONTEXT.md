@@ -222,3 +222,19 @@ Pending → Completed / Failed / Cancelled / No-show
 - Quá 15 phút không đến = No-Show
 - 3 lần No-show trong 30 ngày:
   - Khóa đặt lịch online 15 ngày
+
+---
+
+## IX. Bảo mật & Quản lý Phiên làm việc (Session Security & Expiration) (BR-67 -> BR-70)
+
+### BR-67 (Single Active Session - Last Login Wins)
+Mỗi tài khoản Customer hoặc Admin tại một thời điểm chỉ tồn tại tối đa **01 phiên đăng nhập hợp lệ**. Đăng nhập ở thiết bị mới sẽ tự động vô hiệu hóa phiên làm việc của thiết bị cũ ở lượt gọi API tiếp theo.
+
+### BR-68 (JWT Session Expiration Time)
+Thời gian hiệu lực tối đa của mỗi phiên làm việc (JWT Token) là **90 phút**. Sau 90 phút kể từ thời điểm đăng nhập, Token sẽ tự động hết hạn, Frontend sẽ xóa Storage và yêu cầu người dùng đăng nhập lại.
+
+### BR-69 (Clean Logout Session Revocation)
+Khi người dùng hoặc Admin bấm Đăng xuất (Logout) chủ động, hệ thống gán `ActiveSessionId = null` trong Database để thu hồi quyền truy cập của Token lập tức.
+
+### BR-70 (Unrestricted Login Bypass)
+Các đường dẫn API Đăng nhập & Đăng ký (`/api/auth/login`, `/api/auth/register`, `/api/admin/auth/login`) được ưu tiên bỏ qua kiểm tra Token cũ tại Middleware để người dùng luôn có thể đăng nhập lại thành công bất kể trạng thái Token hiện tại.
