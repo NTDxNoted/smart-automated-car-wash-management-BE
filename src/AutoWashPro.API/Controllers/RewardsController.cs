@@ -21,11 +21,15 @@ namespace AutoWashPro.API.Controllers
         [HttpGet]
         public async Task<IActionResult> GetActiveRewards()
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? User.FindFirst("nameid")?.Value
+                ?? User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
+                ?? User.FindFirst("sub")?.Value;
             if (userIdClaim == null)
                 return Unauthorized(new { message = "UNAUTHORIZED: Cần đăng nhập để xem rewards." });
 
-            var role = User.FindFirst(ClaimTypes.Role)?.Value;
+            var role = User.FindFirst(ClaimTypes.Role)?.Value
+                ?? User.FindFirst("role")?.Value;
             if (!string.Equals(role, "Member", StringComparison.OrdinalIgnoreCase))
                 return StatusCode(403, new { message = "FORBIDDEN: Chỉ Member mới được xem rewards." });
 

@@ -67,7 +67,10 @@ namespace AutoWashPro.API.Controllers
 
         private int? GetCustomerId()
         {
-            var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? User.FindFirst("nameid")?.Value
+                ?? User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
+                ?? User.FindFirst("sub")?.Value;
             return claim != null ? int.Parse(claim) : null;
         }
     }
