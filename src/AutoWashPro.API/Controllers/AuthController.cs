@@ -84,7 +84,10 @@ namespace AutoWashPro.API.Controllers
     {
       try
       {
-        var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    ?? User.FindFirst("nameid")?.Value
+                    ?? User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
+                    ?? User.FindFirst("sub")?.Value;
         if (string.IsNullOrEmpty(claim) || !int.TryParse(claim, out var customerId))
         {
           return Unauthorized(new ErrorResponse
