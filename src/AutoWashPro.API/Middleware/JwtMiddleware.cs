@@ -29,8 +29,17 @@ namespace AutoWashPro.API.Middleware
 
         public async Task InvokeAsync(HttpContext context)
         {
+            var path = context.Request.Path.Value ?? "";
+            if (path.StartsWith("/api/auth/login", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("/api/auth/register", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("/api/admin/auth/login", StringComparison.OrdinalIgnoreCase))
+            {
+                await _next(context);
+                return;
+            }
+
             var token = context.Request.Headers["Authorization"].FirstOrDefault()?.Split(" ").Last();
-            if (token != null)
+            if (!string.IsNullOrWhiteSpace(token))
             {
                 var attached = await AttachUserAsync(context, token);
                 if (!attached)
