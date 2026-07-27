@@ -852,7 +852,7 @@ namespace AutoWash.Application.Services
                             // +7h — khiến so sánh với slotLocal (giờ VN thật) bị lệch 7 tiếng, làm slot
                             // đã đặt hiển thị nhầm là còn trống (và một slot khác, không ai đặt, lại bị
                             // đánh dấu nhầm là đầy).
-                            var bStartLocal = b.ScheduledTime.AddHours(7);
+                            var bStartLocal = b.ScheduledTime.Kind == DateTimeKind.Utc ? b.ScheduledTime.AddHours(7) : b.ScheduledTime;
                             var bEndLocal = bStartLocal.AddMinutes(b.Duration + 5);
 
                             // Overlap
