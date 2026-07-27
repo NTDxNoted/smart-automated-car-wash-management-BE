@@ -44,7 +44,9 @@ namespace AutoWashPro.API.Middleware
                     return;
                 }
 
-                var roleClaim = user.FindFirst("role")?.Value ?? user.FindFirst(ClaimTypes.Role)?.Value;
+                var roleClaim = user.FindFirst("role")?.Value
+                    ?? user.FindFirst(ClaimTypes.Role)?.Value
+                    ?? user.FindFirst("http://schemas.microsoft.com/ws/2008/06/identity/claims/role")?.Value;
                 var isAdmin = roleClaim != null && roleClaim.Equals("Admin", StringComparison.OrdinalIgnoreCase);
 
                 if (!isAdmin)

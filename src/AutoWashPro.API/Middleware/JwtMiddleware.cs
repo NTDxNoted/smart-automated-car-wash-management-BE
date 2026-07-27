@@ -74,7 +74,11 @@ namespace AutoWashPro.API.Middleware
 
                 var jwtToken = (JwtSecurityToken)validatedToken;
                 var sessionId = jwtToken.Claims.FirstOrDefault(c => c.Type == "SessionId")?.Value;
-                var userIdClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier || c.Type == JwtRegisteredClaimNames.Sub)?.Value;
+                var userIdClaim = jwtToken.Claims.FirstOrDefault(c =>
+                    c.Type == ClaimTypes.NameIdentifier ||
+                    c.Type == JwtRegisteredClaimNames.Sub ||
+                    c.Type.Equals("nameid", StringComparison.OrdinalIgnoreCase) ||
+                    c.Type.Equals("sub", StringComparison.OrdinalIgnoreCase))?.Value;
 
                 if (string.IsNullOrWhiteSpace(sessionId) || !int.TryParse(userIdClaim, out var userId))
                 {
