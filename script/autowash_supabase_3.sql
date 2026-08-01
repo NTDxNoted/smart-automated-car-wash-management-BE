@@ -71,7 +71,7 @@ CREATE TABLE Service (
     Description     TEXT           NULL,
     Price           DECIMAL(10,2)  NOT NULL,
     Duration        INT            NOT NULL,
-    Status          VARCHAR(10)    NOT NULL DEFAULT 'Active' CHECK (Status IN ('Active','Inactive'))
+    Status          VARCHAR(10)    NOT NULL DEFAULT 'Active' CHECK (Status IN ('Active','Inactive','Deleted'))
 );
 
 -- ── 5. Rewards_Catalog ──────────────────────────────────
