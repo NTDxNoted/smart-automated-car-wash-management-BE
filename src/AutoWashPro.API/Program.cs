@@ -17,7 +17,11 @@ AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 var builder = WebApplication.CreateBuilder(args);
 
 // 1. Thêm dịch vụ Controller
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new UtcDateTimeJsonConverter());
+    });
 builder.Services.Configure<AutoWash.Application.DTOs.BookingSettings>(builder.Configuration.GetSection("BookingSettings"));
 
 // CORS — cho phép frontend dev server gọi API
