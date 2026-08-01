@@ -97,10 +97,15 @@ namespace AutoWash.Application.Services
           .GroupBy(b => b.ServiceID)
           .Select(g => {
               var service = services.FirstOrDefault(s => s.ServiceID == g.Key);
+              var serviceName = service?.ServiceName ?? "Dịch vụ không xác định";
+              if (service?.Status == "Deleted")
+              {
+                  serviceName = $"{serviceName} (Đã xóa)";
+              }
               return new PopularServiceResponse
               {
                   ServiceId = g.Key,
-                  ServiceName = service?.ServiceName ?? "Dịch vụ không xác định",
+                  ServiceName = serviceName,
                   UsageCount = g.Count(),
                   TotalRevenue = g.Sum(b => b.FinalAmount),
                   Percentage = totalCount == 0 ? 0m : Math.Round((decimal)g.Count() * 100m / totalCount, 2)

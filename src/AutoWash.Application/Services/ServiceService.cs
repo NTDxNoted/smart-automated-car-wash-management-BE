@@ -38,6 +38,23 @@ namespace AutoWash.Application.Services
                 .ToListAsync();
         }
 
+        public async Task<IEnumerable<ServiceResponse>> GetAllServicesForAdminAsync()
+        {
+            return await _context.Services
+                .Where(s => s.Status != "Deleted")
+                .Select(s => new ServiceResponse
+                {
+                    ServiceId = s.ServiceID,
+                    ServiceName = s.ServiceName,
+                    ServiceCategory = s.ServiceCategory,
+                    Description = s.Description,
+                    Price = s.Price,
+                    Duration = s.Duration,
+                    Status = s.Status
+                })
+                .ToListAsync();
+        }
+
         public async Task<ServiceResponse> GetServiceByIdAsync(int serviceId)
         {
             var service = await _context.Services.FirstOrDefaultAsync(s => s.ServiceID == serviceId);
@@ -98,6 +115,17 @@ namespace AutoWash.Application.Services
                 throw new Exception("NOT_FOUND: Không tìm thấy dịch vụ.");
 
             service.Status = service.Status == "Active" ? "Inactive" : "Active";
+            await _context.SaveChangesAsync();
+            return MapToResponse(service);
+        }
+
+        public async Task<ServiceResponse> DeleteServiceAsync(int serviceId)
+        {
+            var service = await _context.Services.FirstOrDefaultAsync(s => s.ServiceID == serviceId);
+            if (service == null)
+                throw new Exception("NOT_FOUND: Không tìm thấy dịch vụ.");
+
+            service.Status = "Deleted";
             await _context.SaveChangesAsync();
             return MapToResponse(service);
         }
