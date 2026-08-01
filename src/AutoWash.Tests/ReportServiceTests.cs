@@ -108,5 +108,20 @@ namespace AutoWash.Tests.Application.Services
       // kế) — chỉ DayOfWeekStats (không giới hạn giờ) mới phản ánh đúng ngày lịch VN của booking.
       Assert.Equal(1, result.DayOfWeekStats.Sum(d => d.BookingCount));
     }
+
+    [Fact]
+    public async Task GetPopularServicesReportAsync_ShouldMarkDeletedServiceInName()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      db.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa cơ bản", ServiceCategory = "Basic", Description = "d", Price = 50000m, Duration = 30, Status = "Deleted" });
+      db.Bookings.Add(new Booking { BookingID = 1, CustomerID = 1, ServiceID = 1, FinalAmount = 100m, Status = BookingStatus.Completed, CreatedAt = DateTime.UtcNow });
+      await db.SaveChangesAsync();
+
+      var result = await service.GetPopularServicesReportAsync(null, null);
+
+      Assert.Equal("Rửa cơ bản (Đã xóa)", result.Single().ServiceName);
+    }
   }
 }

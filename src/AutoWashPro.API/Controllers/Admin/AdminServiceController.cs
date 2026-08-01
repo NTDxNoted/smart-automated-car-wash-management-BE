@@ -31,6 +31,17 @@ namespace AutoWashPro.API.Controllers.Admin
             return null;
         }
 
+        // GET /api/admin/services
+        [HttpGet]
+        public async Task<IActionResult> GetServices()
+        {
+            var authError = CheckAdminAccess();
+            if (authError != null) return authError;
+
+            var services = await _serviceService.GetAllServicesForAdminAsync();
+            return Ok(services);
+        }
+
         // POST /api/admin/services
         [HttpPost]
         public async Task<IActionResult> CreateService([FromBody] CreateServiceRequest request)
@@ -77,6 +88,24 @@ namespace AutoWashPro.API.Controllers.Admin
             try
             {
                 var service = await _serviceService.ToggleServiceStatusAsync(id);
+                return Ok(service);
+            }
+            catch (Exception ex) when (ex.Message.StartsWith("NOT_FOUND"))
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
+
+        // DELETE /api/admin/services/{id}
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteService(int id)
+        {
+            var authError = CheckAdminAccess();
+            if (authError != null) return authError;
+
+            try
+            {
+                var service = await _serviceService.DeleteServiceAsync(id);
                 return Ok(service);
             }
             catch (Exception ex) when (ex.Message.StartsWith("NOT_FOUND"))

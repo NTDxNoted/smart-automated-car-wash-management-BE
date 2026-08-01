@@ -205,5 +205,47 @@ namespace AutoWash.Tests.Application.Services
 
       Assert.StartsWith("NOT_FOUND", ex.Message);
     }
+
+    [Fact]
+    public async Task GetAllServicesForAdminAsync_ShouldExcludeDeletedServices()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Services.Add(new Service { ServiceName = "Rửa cơ bản", ServiceCategory = "Basic", Description = "d", Price = 50000m, Duration = 30, Status = "Active" });
+      dbContext.Services.Add(new Service { ServiceName = "Rửa VIP", ServiceCategory = "VIP", Description = "d", Price = 150000m, Duration = 60, Status = "Inactive" });
+      dbContext.Services.Add(new Service { ServiceName = "Rửa cũ", ServiceCategory = "Basic", Description = "d", Price = 30000m, Duration = 20, Status = "Deleted" });
+      await dbContext.SaveChangesAsync();
+
+      var service = CreateService(dbContext);
+      var services = (await service.GetAllServicesForAdminAsync()).ToList();
+
+      Assert.Equal(2, services.Count);
+      Assert.DoesNotContain(services, s => s.Status == "Deleted");
+    }
+
+    [Fact]
+    public async Task DeleteServiceAsync_ShouldSetStatusToDeleted()
+    {
+      using var dbContext = CreateDbContext();
+      var entity = new Service { ServiceName = "Svc", ServiceCategory = "Basic", Description = "d", Price = 50000m, Duration = 30, Status = "Active" };
+      dbContext.Services.Add(entity);
+      await dbContext.SaveChangesAsync();
+
+      var service = CreateService(dbContext);
+      var result = await service.DeleteServiceAsync(entity.ServiceID);
+
+      Assert.Equal("Deleted", result.Status);
+      Assert.Equal("Deleted", (await dbContext.Services.FindAsync(entity.ServiceID))!.Status);
+    }
+
+    [Fact]
+    public async Task DeleteServiceAsync_WithNonExistentService_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      var service = CreateService(dbContext);
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.DeleteServiceAsync(999));
+
+      Assert.StartsWith("NOT_FOUND", ex.Message);
+    }
   }
 }
