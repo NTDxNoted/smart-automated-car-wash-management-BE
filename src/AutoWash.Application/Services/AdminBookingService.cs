@@ -146,6 +146,14 @@ namespace AutoWash.Application.Services
                 throw new ArgumentException("Trạng thái không hợp lệ.");
             }
 
+            // Admin có thể đánh dấu No-show thủ công bất kỳ lúc nào trong lúc đơn còn chờ check-in
+            // (kể cả trước khi hết 15 phút, ví dụ khách gọi báo không đến) — chỉ chặn khi khách đã check-in.
+            // Việc tự động chuyển No-show sau 15 phút do AutoNoShowJob xử lý ở background.
+            if (newStatus == BookingStatus.NoShow && booking.CheckInTime != null)
+            {
+                throw new InvalidOperationException("INVALID_STATUS_TRANSITION: Khách đã check-in, không thể đánh dấu No-show.");
+            }
+
             var previousStatus = booking.Status;
             booking.Status = newStatus;
 

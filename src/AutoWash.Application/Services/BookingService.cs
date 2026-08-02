@@ -296,7 +296,7 @@ namespace AutoWash.Application.Services
             using var bookingTransactionScope = bookingTransaction;
 
             var activeBookings = await _context.Bookings
-                .Where(b => b.Status != BookingStatus.Cancelled && b.Status != BookingStatus.Failed)
+                .Where(b => b.Status != BookingStatus.Cancelled && b.Status != BookingStatus.Failed && b.Status != BookingStatus.NoShow)
                 .Where(b => b.ScheduledTime.Date == newStart.Date)
                 .Select(b => new
                 {
@@ -673,7 +673,7 @@ namespace AutoWash.Application.Services
                 var slotEnd = slotStart.AddMinutes(duration + 5);
 
                 var activeBookings = await _context.Bookings
-                    .Where(b => b.Status != BookingStatus.Cancelled && b.Status != BookingStatus.Failed)
+                    .Where(b => b.Status != BookingStatus.Cancelled && b.Status != BookingStatus.Failed && b.Status != BookingStatus.NoShow)
                     .Where(b => b.ScheduledTime.Date == slotStart.Date)
                     .Select(b => new
                     {
