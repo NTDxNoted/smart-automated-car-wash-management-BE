@@ -311,5 +311,86 @@ namespace AutoWash.Application.Services
       };
     }
 
+    public async Task<RevenueDetailResponse> GetRevenueDetailReportAsync(DateTime startDate, DateTime endDate, string? paymentMethod)
+    {
+      // PaidAt is stored as UTC; shift VN date boundaries to UTC before comparing, same as
+      // GetPromotionRoiReportAsync above.
+      var rangeStart = startDate.Date.AddHours(-7);
+      var rangeEnd = endDate.Date.AddDays(1).AddHours(-7);
+
+      PaymentMethod? methodFilter = null;
+      if (!string.IsNullOrWhiteSpace(paymentMethod) && !paymentMethod.Equals("all", StringComparison.OrdinalIgnoreCase))
+      {
+        if (!Enum.TryParse<PaymentMethod>(paymentMethod, true, out var parsed))
+          throw new ArgumentException("Phương thức thanh toán không hợp lệ.");
+        methodFilter = parsed;
+      }
+
+      var query =
+          from t in _context.Transactions
+          join b in _context.Bookings on t.BookingID equals b.BookingID
+          where b.Status == BookingStatus.Completed
+             && t.Status == TransactionStatus.Paid
+             && t.PaidAt != null
+             && t.PaidAt >= rangeStart
+             && t.PaidAt < rangeEnd
+          select new { Transaction = t, Booking = b };
+
+      if (methodFilter.HasValue)
+      {
+        query = query.Where(x => x.Transaction.PaymentMethod == methodFilter.Value);
+      }
+
+      var rows = await query.ToListAsync();
+
+      var customerNames = await _context.Customers.ToDictionaryAsync(c => c.CustomerID, c => c.FullName);
+      var serviceNames = await _context.Services.ToDictionaryAsync(s => s.ServiceID, s => s.ServiceName);
+      var promotions = await _context.Promotions.ToDictionaryAsync(p => p.PromotionID, p => new { p.Title, p.PromoCode });
+      var rewardNames = await _context.RewardsCatalog.ToDictionaryAsync(r => r.RewardID, r => r.RewardName);
+
+      var transactions = rows
+          .OrderByDescending(x => x.Transaction.PaidAt)
+          .Select(x =>
+          {
+            string? promotionApplied = null;
+            if (x.Booking.PromotionID.HasValue && promotions.TryGetValue(x.Booking.PromotionID.Value, out var promo))
+            {
+              promotionApplied = string.IsNullOrWhiteSpace(promo.PromoCode) ? promo.Title : $"{promo.Title} ({promo.PromoCode})";
+            }
+            else if (x.Booking.RewardID.HasValue && rewardNames.TryGetValue(x.Booking.RewardID.Value, out var rewardName))
+            {
+              promotionApplied = rewardName;
+            }
+
+            return new RevenueTransactionItemDto
+            {
+              InvoiceCode = $"HD{x.Transaction.TransactionID:D5}",
+              CustomerName = customerNames.TryGetValue(x.Booking.CustomerID, out var name) && !string.IsNullOrWhiteSpace(name)
+                  ? name
+                  : (string.IsNullOrWhiteSpace(x.Booking.Phone) ? "Khách vãng lai" : x.Booking.Phone),
+              ServiceName = serviceNames.TryGetValue(x.Booking.ServiceID, out var svcName) ? svcName : "Dịch vụ không xác định",
+              PaymentMethod = x.Transaction.PaymentMethod.ToString(),
+              PromotionApplied = promotionApplied,
+              DiscountAmount = x.Booking.DiscountApplied,
+              Amount = x.Transaction.Amount,
+              PaidAt = x.Transaction.PaidAt!.Value
+            };
+          })
+          .ToList();
+
+      return new RevenueDetailResponse
+      {
+        StartDate = startDate.ToString("yyyy-MM-dd"),
+        EndDate = endDate.ToString("yyyy-MM-dd"),
+        PaymentMethodFilter = methodFilter?.ToString() ?? "All",
+        GrossRevenue = rows.Sum(x => x.Booking.BaseAmount),
+        TotalDiscount = rows.Sum(x => x.Booking.DiscountApplied),
+        NetRevenue = rows.Sum(x => x.Transaction.Amount),
+        CashRevenue = rows.Where(x => x.Transaction.PaymentMethod == PaymentMethod.Cash).Sum(x => x.Transaction.Amount),
+        TransferRevenue = rows.Where(x => x.Transaction.PaymentMethod == PaymentMethod.Transfer).Sum(x => x.Transaction.Amount),
+        Transactions = transactions
+      };
+    }
+
   }
 }
