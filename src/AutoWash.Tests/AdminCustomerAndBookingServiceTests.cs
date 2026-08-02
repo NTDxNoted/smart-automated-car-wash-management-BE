@@ -150,7 +150,7 @@ namespace AutoWash.Tests.Application.Services
         Phone = "0902222222",
         ServiceID = 1,
         LicensePlate = "51A-111.11",
-        ScheduledTime = DateTime.UtcNow.AddMinutes(10),
+        ScheduledTime = DateTime.UtcNow.AddMinutes(-20),
         Status = BookingStatus.Pending,
         CreatedAt = DateTime.UtcNow
       });
@@ -224,7 +224,7 @@ namespace AutoWash.Tests.Application.Services
         Phone = "0933333333",
         ServiceID = 1,
         LicensePlate = "51A-333.33",
-        ScheduledTime = DateTime.UtcNow.AddMinutes(10),
+        ScheduledTime = DateTime.UtcNow.AddMinutes(-20),
         Status = BookingStatus.Pending,
         CreatedAt = DateTime.UtcNow
       });
