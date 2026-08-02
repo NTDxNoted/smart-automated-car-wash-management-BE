@@ -13,5 +13,6 @@ namespace AutoWash.Application.Interfaces
     Task<LoyaltyStatsResponse> GetLoyaltyStatsAsync();
     Task<PeakOccupancyResponse> GetPeakOccupancyReportAsync(DateTime startDate, DateTime endDate);
     Task<PromotionRoiResponse> GetPromotionRoiReportAsync(DateTime startDate, DateTime endDate);
+    Task<RevenueDetailResponse> GetRevenueDetailReportAsync(DateTime startDate, DateTime endDate, string? paymentMethod);
   }
 }

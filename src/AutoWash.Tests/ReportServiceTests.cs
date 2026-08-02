@@ -123,5 +123,112 @@ namespace AutoWash.Tests.Application.Services
 
       Assert.Equal("Rửa cơ bản (Đã xóa)", result.Single().ServiceName);
     }
+
+    [Fact]
+    public async Task GetRevenueDetailReportAsync_ComputesGrossDiscountNetAndPaymentMethodSplit()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      var today = DateTime.UtcNow.Date;
+
+      db.Customers.Add(new Customer { CustomerID = 1, FullName = "Nguyen Van A", Phone = "0901111111", CreatedAt = today });
+      db.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa cơ bản", ServiceCategory = "Basic", Description = "d", Price = 100000m, Duration = 30, Status = "Active" });
+      db.Promotions.Add(new Promotion { PromotionID = 1, Title = "Giảm hè", PromoCode = "SUMMER10", DiscountType = "Fixed_Amount", DiscountValue = 20000m, StartDate = today.AddDays(-30), EndDate = today.AddDays(30) });
+      await db.SaveChangesAsync();
+
+      // Booking 1: Cash, có áp dụng khuyến mãi
+      db.Bookings.Add(new Booking
+      {
+        BookingID = 1,
+        CustomerID = 1,
+        Phone = "0901111111",
+        ServiceID = 1,
+        PromotionID = 1,
+        Status = BookingStatus.Completed,
+        BaseAmount = 100000m,
+        DiscountApplied = 20000m,
+        FinalAmount = 80000m,
+        CreatedAt = today
+      });
+
+      // Booking 2: Transfer, không khuyến mãi
+      db.Bookings.Add(new Booking
+      {
+        BookingID = 2,
+        CustomerID = 1,
+        Phone = "0901111111",
+        ServiceID = 1,
+        Status = BookingStatus.Completed,
+        BaseAmount = 150000m,
+        DiscountApplied = 0m,
+        FinalAmount = 150000m,
+        CreatedAt = today
+      });
+      await db.SaveChangesAsync();
+
+      db.Transactions.AddRange(
+          new Transaction { TransactionID = 1, BookingID = 1, Amount = 80000m, PaymentMethod = PaymentMethod.Cash, PaidAt = today.AddHours(3), Status = TransactionStatus.Paid },
+          new Transaction { TransactionID = 2, BookingID = 2, Amount = 150000m, PaymentMethod = PaymentMethod.Transfer, PaidAt = today.AddHours(4), Status = TransactionStatus.Paid }
+      );
+      await db.SaveChangesAsync();
+
+      var result = await service.GetRevenueDetailReportAsync(today, today, null);
+
+      Assert.Equal(250000m, result.GrossRevenue);
+      Assert.Equal(20000m, result.TotalDiscount);
+      Assert.Equal(230000m, result.NetRevenue);
+      Assert.Equal(80000m, result.CashRevenue);
+      Assert.Equal(150000m, result.TransferRevenue);
+      Assert.Equal(result.CashRevenue + result.TransferRevenue, result.NetRevenue);
+      Assert.Equal(2, result.Transactions.Count);
+
+      var cashItem = result.Transactions.Single(t => t.PaymentMethod == "Cash");
+      Assert.Equal("Nguyen Van A", cashItem.CustomerName);
+      Assert.Equal("Rửa cơ bản", cashItem.ServiceName);
+      Assert.Equal("Giảm hè (SUMMER10)", cashItem.PromotionApplied);
+      Assert.Equal(20000m, cashItem.DiscountAmount);
+
+      var transferItem = result.Transactions.Single(t => t.PaymentMethod == "Transfer");
+      Assert.Null(transferItem.PromotionApplied);
+      Assert.Equal(0m, transferItem.DiscountAmount);
+
+      // Admin phải cộng đúng cột Khuyến mãi trên bảng ra bằng số Tổng khuyến mãi phía trên —
+      // không được lệch giữa 2 nguồn dữ liệu này.
+      Assert.Equal(result.TotalDiscount, result.Transactions.Sum(t => t.DiscountAmount));
+    }
+
+    [Fact]
+    public async Task GetRevenueDetailReportAsync_FiltersByPaymentMethod()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      var today = DateTime.UtcNow.Date;
+
+      db.Customers.Add(new Customer { CustomerID = 1, FullName = "Nguyen Van B", Phone = "0902222222", CreatedAt = today });
+      db.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa cơ bản", ServiceCategory = "Basic", Description = "d", Price = 100000m, Duration = 30, Status = "Active" });
+      await db.SaveChangesAsync();
+
+      db.Bookings.AddRange(
+          new Booking { BookingID = 1, CustomerID = 1, Phone = "0902222222", ServiceID = 1, Status = BookingStatus.Completed, BaseAmount = 100000m, FinalAmount = 100000m, CreatedAt = today },
+          new Booking { BookingID = 2, CustomerID = 1, Phone = "0902222222", ServiceID = 1, Status = BookingStatus.Completed, BaseAmount = 200000m, FinalAmount = 200000m, CreatedAt = today }
+      );
+      await db.SaveChangesAsync();
+
+      db.Transactions.AddRange(
+          new Transaction { TransactionID = 1, BookingID = 1, Amount = 100000m, PaymentMethod = PaymentMethod.Cash, PaidAt = today.AddHours(2), Status = TransactionStatus.Paid },
+          new Transaction { TransactionID = 2, BookingID = 2, Amount = 200000m, PaymentMethod = PaymentMethod.Transfer, PaidAt = today.AddHours(3), Status = TransactionStatus.Paid }
+      );
+      await db.SaveChangesAsync();
+
+      var result = await service.GetRevenueDetailReportAsync(today, today, "cash");
+
+      Assert.Equal(100000m, result.GrossRevenue);
+      Assert.Equal(100000m, result.NetRevenue);
+      Assert.Equal(100000m, result.CashRevenue);
+      Assert.Equal(0m, result.TransferRevenue);
+      Assert.Single(result.Transactions);
+    }
   }
 }
