@@ -43,6 +43,22 @@ namespace AutoWash.Application.Services
                 .ToListAsync();
         }
 
+        public async Task<IEnumerable<RewardResponse>> GetAllRewardsAsync()
+        {
+            return await _context.RewardsCatalog
+                .Select(r => new RewardResponse
+                {
+                    RewardId = r.RewardID,
+                    RewardName = r.RewardName,
+                    Description = r.Description,
+                    PointsRequired = r.PointsRequired,
+                    DiscountAmount = r.DiscountAmount,
+                    DiscountType = r.DiscountType,
+                    IsActive = r.IsActive
+                })
+                .ToListAsync();
+        }
+
         public async Task<RewardResponse> CreateRewardAsync(CreateRewardRequest request)
         {
             if (string.IsNullOrWhiteSpace(request.RewardName) ||

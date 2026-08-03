@@ -31,6 +31,17 @@ namespace AutoWashPro.API.Controllers.Admin
             return null;
         }
 
+        // GET /api/admin/rewards
+        [HttpGet]
+        public async Task<IActionResult> GetAllRewards()
+        {
+            var authError = CheckAdminAccess();
+            if (authError != null) return authError;
+
+            var rewards = await _rewardService.GetAllRewardsAsync();
+            return Ok(rewards);
+        }
+
         // POST /api/admin/rewards
         [HttpPost]
         public async Task<IActionResult> CreateReward([FromBody] CreateRewardRequest request)
