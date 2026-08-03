@@ -95,6 +95,23 @@ namespace AutoWashPro.API.Controllers.Admin
                 return NotFound(new { message = ex.Message });
             }
         }
+        // DELETE /api/admin/rewards/{id}
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteReward(int id)
+        {
+            var authError = CheckAdminAccess();
+            if (authError != null) return authError;
+
+            try
+            {
+                await _rewardService.DeleteRewardAsync(id);
+                return NoContent();
+            }
+            catch (Exception ex) when (ex.Message.StartsWith("NOT_FOUND"))
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
     }
 }
 

@@ -135,6 +135,16 @@ namespace AutoWash.Application.Services
             return MapToResponse(reward);
         }
 
+        public async Task DeleteRewardAsync(int rewardId)
+        {
+            var reward = await _context.RewardsCatalog.FirstOrDefaultAsync(r => r.RewardID == rewardId);
+            if (reward == null)
+                throw new Exception("NOT_FOUND: Không tìm thấy phần thưởng.");
+
+            _context.RewardsCatalog.Remove(reward);
+            await _context.SaveChangesAsync();
+        }
+
         private static RewardResponse MapToResponse(RewardsCatalog r) => new RewardResponse
         {
             RewardId = r.RewardID,
