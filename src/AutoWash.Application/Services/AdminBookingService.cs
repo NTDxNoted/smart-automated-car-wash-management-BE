@@ -165,6 +165,9 @@ namespace AutoWash.Application.Services
             if (service == null)
                 throw new Exception("SERVICE_NOT_FOUND: Không tìm thấy dịch vụ.");
 
+            if (service.Price <= 0)
+                throw new Exception("SERVICE_PRICE_NOT_CONFIGURED: Dịch vụ này chưa được cấu hình đơn giá.");
+
             var phone = request.Phone.Trim();
             var plate = request.Plate.Trim().ToUpperInvariant();
 
