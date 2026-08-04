@@ -12,5 +12,6 @@ namespace AutoWash.Application.Interfaces
         Task<object> UpdateLicensePlateAsync(int id, UpdateLicensePlateRequest request);
         Task<object> CheckInAsync(int id);
         Task<object> EmergencyStopAsync(int id, EmergencyStopRequest request);
+        Task<AdminBookingListResponse> CreateWalkInBookingAsync(CreateWalkInBookingRequest request);
     }
 }

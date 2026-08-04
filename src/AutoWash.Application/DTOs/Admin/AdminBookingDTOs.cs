@@ -24,6 +24,7 @@ namespace AutoWash.Application.DTOs.Admin
         public string? PaymentMethod { get; set; }
         public DateTime? PaymentAt { get; set; }
         public DateTime CreatedAt { get; set; }
+        public bool IsWalkIn { get; set; }
     }
 
     public class UpdateBookingStatusRequest
@@ -39,5 +40,15 @@ namespace AutoWash.Application.DTOs.Admin
     public class EmergencyStopRequest
     {
         public string Reason { get; set; } = string.Empty;
+    }
+
+    public class CreateWalkInBookingRequest
+    {
+        public string CustomerName { get; set; } = string.Empty;
+        public string Phone { get; set; } = string.Empty;
+        public string Plate { get; set; } = string.Empty;
+        public int ServiceId { get; set; }
+        public string BookingDate { get; set; } = string.Empty;
+        public string BookingTime { get; set; } = string.Empty;
     }
 }

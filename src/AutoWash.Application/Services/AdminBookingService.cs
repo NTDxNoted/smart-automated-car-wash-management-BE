@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using AutoWash.Application.Common.Validation;
 using AutoWash.Application.DTOs.Admin;
 using AutoWash.Application.Interfaces;
 using AutoWash.Domain.Entities;
@@ -92,7 +93,8 @@ namespace AutoWash.Application.Services
                     PaymentStatus = transaction?.Status.ToString(),
                     PaymentMethod = transaction?.PaymentMethod.ToString(),
                     PaymentAt = transaction?.PaidAt,
-                    CreatedAt = b.CreatedAt
+                    CreatedAt = b.CreatedAt,
+                    IsWalkIn = b.IsWalkIn
                 };
             });
         }
@@ -127,7 +129,125 @@ namespace AutoWash.Application.Services
                 PaymentStatus = transaction?.Status.ToString(),
                 PaymentMethod = transaction?.PaymentMethod.ToString(),
                 PaymentAt = transaction?.PaidAt,
-                CreatedAt = booking.CreatedAt
+                CreatedAt = booking.CreatedAt,
+                IsWalkIn = booking.IsWalkIn
+            };
+        }
+
+        public async Task<AdminBookingListResponse> CreateWalkInBookingAsync(CreateWalkInBookingRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.CustomerName))
+                throw new Exception("CUSTOMER_NAME_REQUIRED: Vui lòng nhập tên khách hàng.");
+
+            if (string.IsNullOrWhiteSpace(request.Phone))
+                throw new Exception("PHONE_REQUIRED: Vui lòng nhập số điện thoại.");
+
+            if (string.IsNullOrWhiteSpace(request.Plate))
+                throw new Exception("LICENSE_PLATE_REQUIRED: Vui lòng nhập biển số xe.");
+
+            if (!LicensePlateValidator.IsValid(request.Plate))
+                throw new Exception("INVALID_LICENSE_PLATE: Biển số xe không đúng định dạng chuẩn Việt Nam (VD: 30F-123.45, 51F12345).");
+
+            if (request.ServiceId <= 0)
+                throw new Exception("SERVICE_REQUIRED: Vui lòng chọn dịch vụ.");
+
+            if (!DateTime.TryParse(request.BookingDate, out var datePart))
+                throw new Exception("INVALID_DATETIME: Ngày đặt lịch không hợp lệ.");
+
+            if (!TimeSpan.TryParse(request.BookingTime, out var timePart))
+                throw new Exception("INVALID_DATETIME: Giờ đặt lịch không hợp lệ.");
+
+            // BookingDate/BookingTime là giờ địa phương VN (giống format trả về ở GetAvailableSlotsAsync);
+            // trừ 7h để lưu thống nhất dạng UTC như mọi ScheduledTime khác trong hệ thống.
+            var scheduledTime = datePart.Date.Add(timePart).AddHours(-7);
+
+            var service = await _context.Services.FirstOrDefaultAsync(s => s.ServiceID == request.ServiceId);
+            if (service == null)
+                throw new Exception("SERVICE_NOT_FOUND: Không tìm thấy dịch vụ.");
+
+            var phone = request.Phone.Trim();
+            var plate = request.Plate.Trim().ToUpperInvariant();
+
+            var customer = await _context.Customers.FirstOrDefaultAsync(c => c.Phone == phone);
+            if (customer == null)
+            {
+                customer = new Customer
+                {
+                    FullName = request.CustomerName.Trim(),
+                    Phone = phone,
+                    Password = "WALKIN",
+                    Role = "MEMBER",
+                    TierID = 1,
+                    CreatedAt = DateTime.UtcNow
+                };
+                _context.Customers.Add(customer);
+                await _context.SaveChangesAsync();
+            }
+
+            var vehicle = await _context.Vehicles
+                .FirstOrDefaultAsync(v => v.CustomerID == customer.CustomerID && v.LicensePlate == plate);
+
+            if (vehicle == null)
+            {
+                vehicle = new Vehicle
+                {
+                    CustomerID = customer.CustomerID,
+                    LicensePlate = plate,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                };
+                _context.Vehicles.Add(vehicle);
+                await _context.SaveChangesAsync();
+            }
+
+            var booking = new Booking
+            {
+                CustomerID = customer.CustomerID,
+                Phone = phone,
+                VehicleID = vehicle.VehicleID,
+                LicensePlate = plate,
+                ServiceID = service.ServiceID,
+                ScheduledTime = scheduledTime,
+                Status = BookingStatus.Pending,
+                BaseAmount = service.Price,
+                DiscountApplied = 0,
+                FinalAmount = service.Price,
+                PointsEarned = (int)Math.Max(0, Math.Floor(service.Price / 10000m)),
+                IsWalkIn = true,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.Bookings.Add(booking);
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Walk-in booking created BookingID={BookingID}, CustomerID={CustomerID}, Plate={Plate}",
+                booking.BookingID, customer.CustomerID, plate);
+
+            if (_adminNotifier != null)
+            {
+                await _adminNotifier.NotifyNewBookingAsync(booking.BookingID, customer.FullName, plate, service.ServiceName);
+            }
+
+            return new AdminBookingListResponse
+            {
+                BookingID = booking.BookingID,
+                CustomerID = customer.CustomerID,
+                CustomerName = customer.FullName,
+                Phone = booking.Phone,
+                VehicleID = booking.VehicleID,
+                LicensePlate = booking.LicensePlate,
+                ServiceID = booking.ServiceID,
+                ServiceName = service.ServiceName,
+                ScheduledTime = booking.ScheduledTime,
+                CheckInTime = booking.CheckInTime,
+                Status = booking.Status.ToString(),
+                TotalPrice = booking.FinalAmount,
+                BaseAmount = booking.BaseAmount,
+                DiscountApplied = booking.DiscountApplied,
+                FinalAmount = booking.FinalAmount,
+                PointsEarned = booking.PointsEarned,
+                CreatedAt = booking.CreatedAt,
+                IsWalkIn = booking.IsWalkIn
             };
         }
 

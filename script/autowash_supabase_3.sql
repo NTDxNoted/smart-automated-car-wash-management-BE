@@ -122,6 +122,7 @@ CREATE TABLE Booking (
     PointsRedeemed  INT            NOT NULL DEFAULT 0,
     CreatedAt       TIMESTAMP      NOT NULL DEFAULT NOW(),
     CompletedAt     TIMESTAMP      NULL DEFAULT NULL,
+    IsWalkIn        BOOLEAN        NOT NULL DEFAULT FALSE,
     CONSTRAINT fk_booking_customer  FOREIGN KEY (CustomerID)  REFERENCES Customer(CustomerID)      ON UPDATE CASCADE ON DELETE RESTRICT,
     CONSTRAINT fk_booking_vehicle   FOREIGN KEY (VehicleID)   REFERENCES Vehicle(VehicleID)        ON UPDATE CASCADE ON DELETE RESTRICT,
     CONSTRAINT fk_booking_service   FOREIGN KEY (ServiceID)   REFERENCES Service(ServiceID)        ON UPDATE CASCADE ON DELETE RESTRICT,

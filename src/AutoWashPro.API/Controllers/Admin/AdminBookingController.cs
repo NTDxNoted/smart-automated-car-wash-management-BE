@@ -89,6 +89,22 @@ namespace AutoWashPro.API.Controllers.Admin
             }
         }
 
+        [HttpPost("walk-in")]
+        public async Task<IActionResult> CreateWalkInBooking([FromBody] CreateWalkInBookingRequest request)
+        {
+            try
+            {
+                var result = await _adminBookingService.CreateWalkInBookingAsync(request);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                if (ex.Message.StartsWith("SERVICE_NOT_FOUND"))
+                    return NotFound(new { error = "SERVICE_NOT_FOUND", message = "Không tìm thấy dịch vụ" });
+                return BadRequest(new { error = "CREATE_WALK_IN_BOOKING_FAILED", message = ex.Message });
+            }
+        }
+
         [HttpPost("{id}/checkin")]
         public async Task<IActionResult> CheckIn(int id)
         {
