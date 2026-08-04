@@ -69,6 +69,9 @@ namespace AutoWash.Application.Services
                 .Where(t => bookingIds.Contains(t.BookingID))
                 .ToDictionaryAsync(t => t.BookingID, t => t);
 
+            var promotions = await _context.Promotions.ToDictionaryAsync(p => p.PromotionID, p => (p.Title, p.PromoCode));
+            var rewardNames = await _context.RewardsCatalog.ToDictionaryAsync(r => r.RewardID, r => r.RewardName);
+
             return bookings.Select(b =>
             {
                 transactions.TryGetValue(b.BookingID, out var transaction);
@@ -94,7 +97,10 @@ namespace AutoWash.Application.Services
                     PaymentMethod = transaction?.PaymentMethod.ToString(),
                     PaymentAt = transaction?.PaidAt,
                     CreatedAt = b.CreatedAt,
-                    IsWalkIn = b.IsWalkIn
+                    IsWalkIn = b.IsWalkIn,
+                    CompletedAt = b.CompletedAt,
+                    InvoiceCode = transaction != null ? $"HD{transaction.TransactionID:D5}" : null,
+                    PromotionApplied = GetPromotionApplied(b, promotions, rewardNames)
                 };
             });
         }
@@ -107,6 +113,9 @@ namespace AutoWash.Application.Services
             var customer = await _context.Customers.FindAsync(booking.CustomerID);
             var service = await _context.Services.FindAsync(booking.ServiceID);
             var transaction = await _context.Transactions.FirstOrDefaultAsync(t => t.BookingID == booking.BookingID);
+
+            var promotions = await _context.Promotions.ToDictionaryAsync(p => p.PromotionID, p => (p.Title, p.PromoCode));
+            var rewardNames = await _context.RewardsCatalog.ToDictionaryAsync(r => r.RewardID, r => r.RewardName);
 
             return new AdminBookingListResponse
             {
@@ -130,8 +139,27 @@ namespace AutoWash.Application.Services
                 PaymentMethod = transaction?.PaymentMethod.ToString(),
                 PaymentAt = transaction?.PaidAt,
                 CreatedAt = booking.CreatedAt,
-                IsWalkIn = booking.IsWalkIn
+                IsWalkIn = booking.IsWalkIn,
+                CompletedAt = booking.CompletedAt,
+                InvoiceCode = transaction != null ? $"HD{transaction.TransactionID:D5}" : null,
+                PromotionApplied = GetPromotionApplied(booking, promotions, rewardNames)
             };
+        }
+
+        private static string? GetPromotionApplied(
+            Booking booking,
+            Dictionary<int, (string Title, string PromoCode)> promotions,
+            Dictionary<int, string> rewardNames)
+        {
+            if (booking.PromotionID.HasValue && promotions.TryGetValue(booking.PromotionID.Value, out var promo))
+            {
+                return string.IsNullOrWhiteSpace(promo.PromoCode) ? promo.Title : $"{promo.Title} ({promo.PromoCode})";
+            }
+            if (booking.RewardID.HasValue && rewardNames.TryGetValue(booking.RewardID.Value, out var rewardName))
+            {
+                return rewardName;
+            }
+            return null;
         }
 
         public async Task<AdminBookingListResponse> CreateWalkInBookingAsync(CreateWalkInBookingRequest request)

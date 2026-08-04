@@ -25,6 +25,9 @@ namespace AutoWash.Application.DTOs.Admin
         public DateTime? PaymentAt { get; set; }
         public DateTime CreatedAt { get; set; }
         public bool IsWalkIn { get; set; }
+        public DateTime? CompletedAt { get; set; }
+        public string? InvoiceCode { get; set; }
+        public string? PromotionApplied { get; set; }
     }
 
     public class UpdateBookingStatusRequest
