@@ -26,6 +26,7 @@ namespace AutoWash.Domain.Entities
         public int PointsRedeemed { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? CompletedAt { get; set; }
+        public bool IsWalkIn { get; set; }
 
         // Navigation Properties (Tùy chọn, dùng để EF Core tự join bảng)
         // public virtual Customer Customer { get; set; }

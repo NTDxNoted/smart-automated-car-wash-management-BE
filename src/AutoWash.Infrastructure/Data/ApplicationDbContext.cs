@@ -141,6 +141,7 @@ namespace AutoWash.Infrastructure.Data
                 entity.Property(e => e.PointsRedeemed).HasColumnName("pointsredeemed");
                 entity.Property(e => e.CreatedAt).HasColumnName("createdat");
                 entity.Property(e => e.CompletedAt).HasColumnName("completedat");
+                entity.Property(e => e.IsWalkIn).HasColumnName("iswalkin").HasDefaultValue(false);
             });
 
             builder.Entity<PointTransaction>(entity =>

@@ -289,5 +289,123 @@ namespace AutoWash.Tests.Application.Services
       tierServiceMock.Verify(t => t.EvaluateUpgradeAsync(1), Times.Once);
       pointServiceMock.Verify(p => p.EarnPointsAsync(1), Times.Once);
     }
+
+    [Fact]
+    public async Task CreateWalkInBookingAsync_WithNewCustomer_ShouldCreateBookingFlaggedAsWalkIn()
+    {
+      using var dbContext = CreateDbContext();
+
+      dbContext.Services.Add(new Service
+      {
+        ServiceID = 1,
+        ServiceName = "Rửa xe cơ bản",
+        Price = 100000m,
+        Duration = 30,
+        Status = "Active"
+      });
+      await dbContext.SaveChangesAsync();
+
+      var logger = Mock.Of<ILogger<AdminBookingService>>();
+      var service = new AdminBookingService(dbContext, logger);
+
+      var result = await service.CreateWalkInBookingAsync(new CreateWalkInBookingRequest
+      {
+        CustomerName = "Nguyễn Văn A",
+        Phone = "0901234567",
+        Plate = "59A-12345",
+        ServiceId = 1,
+        BookingDate = "2026-08-03",
+        BookingTime = "15:00"
+      });
+
+      Assert.True(result.IsWalkIn);
+      Assert.Equal("Pending", result.Status);
+      Assert.Equal(100000m, result.FinalAmount);
+      Assert.Equal("59A-12345", result.LicensePlate);
+
+      var persisted = await dbContext.Bookings.FirstAsync(b => b.BookingID == result.BookingID);
+      Assert.True(persisted.IsWalkIn);
+
+      var customer = await dbContext.Customers.FirstAsync(c => c.Phone == "0901234567");
+      Assert.Equal("Nguyễn Văn A", customer.FullName);
+    }
+
+    [Fact]
+    public async Task CreateWalkInBookingAsync_WithExistingCustomerPhone_ShouldReuseCustomerAndVehicle()
+    {
+      using var dbContext = CreateDbContext();
+
+      var customer = new Customer
+      {
+        CustomerID = 1,
+        FullName = "Khách quen",
+        Phone = "0909999999",
+        Password = "pw",
+        CreatedAt = DateTime.UtcNow
+      };
+      dbContext.Customers.Add(customer);
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa xe cơ bản", Price = 100000m, Duration = 30, Status = "Active" });
+      await dbContext.SaveChangesAsync();
+
+      var logger = Mock.Of<ILogger<AdminBookingService>>();
+      var service = new AdminBookingService(dbContext, logger);
+
+      await service.CreateWalkInBookingAsync(new CreateWalkInBookingRequest
+      {
+        CustomerName = "Khách quen",
+        Phone = "0909999999",
+        Plate = "59A-12345",
+        ServiceId = 1,
+        BookingDate = "2026-08-03",
+        BookingTime = "15:00"
+      });
+
+      Assert.Single(dbContext.Customers);
+      Assert.Single(dbContext.Vehicles);
+    }
+
+    [Fact]
+    public async Task CreateWalkInBookingAsync_WithInvalidLicensePlate_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa xe cơ bản", Price = 100000m, Duration = 30, Status = "Active" });
+      await dbContext.SaveChangesAsync();
+
+      var logger = Mock.Of<ILogger<AdminBookingService>>();
+      var service = new AdminBookingService(dbContext, logger);
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CreateWalkInBookingAsync(new CreateWalkInBookingRequest
+      {
+        CustomerName = "Nguyễn Văn A",
+        Phone = "0901234567",
+        Plate = "invalid-plate",
+        ServiceId = 1,
+        BookingDate = "2026-08-03",
+        BookingTime = "15:00"
+      }));
+
+      Assert.StartsWith("INVALID_LICENSE_PLATE", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreateWalkInBookingAsync_WithUnknownService_ShouldThrowServiceNotFound()
+    {
+      using var dbContext = CreateDbContext();
+
+      var logger = Mock.Of<ILogger<AdminBookingService>>();
+      var service = new AdminBookingService(dbContext, logger);
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CreateWalkInBookingAsync(new CreateWalkInBookingRequest
+      {
+        CustomerName = "Nguyễn Văn A",
+        Phone = "0901234567",
+        Plate = "59A-12345",
+        ServiceId = 999,
+        BookingDate = "2026-08-03",
+        BookingTime = "15:00"
+      }));
+
+      Assert.StartsWith("SERVICE_NOT_FOUND", ex.Message);
+    }
   }
 }
