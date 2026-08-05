@@ -1,3 +1,4 @@
+using AutoWash.Application.Common;
 using AutoWash.Application.DTOs;
 using AutoWash.Application.DTOs.Admin;
 using AutoWash.Application.Interfaces;
@@ -361,36 +362,23 @@ namespace AutoWash.Application.Services
 
       var customerNames = await _context.Customers.ToDictionaryAsync(c => c.CustomerID, c => c.FullName);
       var serviceNames = await _context.Services.ToDictionaryAsync(s => s.ServiceID, s => s.ServiceName);
-      var promotions = await _context.Promotions.ToDictionaryAsync(p => p.PromotionID, p => new { p.Title, p.PromoCode });
+      var promotions = await _context.Promotions.ToDictionaryAsync(p => p.PromotionID, p => (p.Title, p.PromoCode));
       var rewardNames = await _context.RewardsCatalog.ToDictionaryAsync(r => r.RewardID, r => r.RewardName);
 
       var transactions = rows
           .OrderByDescending(x => x.Transaction.PaidAt)
-          .Select(x =>
+          .Select(x => new RevenueTransactionItemDto
           {
-            string? promotionApplied = null;
-            if (x.Booking.PromotionID.HasValue && promotions.TryGetValue(x.Booking.PromotionID.Value, out var promo))
-            {
-              promotionApplied = string.IsNullOrWhiteSpace(promo.PromoCode) ? promo.Title : $"{promo.Title} ({promo.PromoCode})";
-            }
-            else if (x.Booking.RewardID.HasValue && rewardNames.TryGetValue(x.Booking.RewardID.Value, out var rewardName))
-            {
-              promotionApplied = rewardName;
-            }
-
-            return new RevenueTransactionItemDto
-            {
-              InvoiceCode = $"HD{x.Transaction.TransactionID:D5}",
-              CustomerName = customerNames.TryGetValue(x.Booking.CustomerID, out var name) && !string.IsNullOrWhiteSpace(name)
-                  ? name
-                  : (string.IsNullOrWhiteSpace(x.Booking.Phone) ? "Khách vãng lai" : x.Booking.Phone),
-              ServiceName = serviceNames.TryGetValue(x.Booking.ServiceID, out var svcName) ? svcName : "Dịch vụ không xác định",
-              PaymentMethod = x.Transaction.PaymentMethod.ToString(),
-              PromotionApplied = promotionApplied,
-              DiscountAmount = x.Booking.DiscountApplied,
-              Amount = x.Transaction.Amount,
-              PaidAt = x.Transaction.PaidAt!.Value
-            };
+            InvoiceCode = BookingDisplayHelper.FormatInvoiceCode(x.Transaction.TransactionID),
+            CustomerName = customerNames.TryGetValue(x.Booking.CustomerID, out var name) && !string.IsNullOrWhiteSpace(name)
+                ? name
+                : (string.IsNullOrWhiteSpace(x.Booking.Phone) ? "Khách vãng lai" : x.Booking.Phone),
+            ServiceName = serviceNames.TryGetValue(x.Booking.ServiceID, out var svcName) ? svcName : "Dịch vụ không xác định",
+            PaymentMethod = x.Transaction.PaymentMethod.ToString(),
+            PromotionApplied = BookingDisplayHelper.GetPromotionApplied(x.Booking.PromotionID, x.Booking.RewardID, promotions, rewardNames),
+            DiscountAmount = x.Booking.DiscountApplied,
+            Amount = x.Transaction.Amount,
+            PaidAt = x.Transaction.PaidAt!.Value
           })
           .ToList();
 
