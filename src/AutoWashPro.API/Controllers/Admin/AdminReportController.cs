@@ -167,5 +167,77 @@ namespace AutoWashPro.API.Controllers.Admin
         return BadRequest(new { error = "GET_REVENUE_DETAIL_FAILED", message = ex.Message });
       }
     }
+
+    [HttpGet("completion-rate-detail")]
+    public async Task<IActionResult> GetCompletionRateDetail([FromQuery] string? filterType, [FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate, [FromQuery] int? serviceId, [FromQuery] string? groupBy)
+    {
+      try
+      {
+        if (!IsValidDateRange(startDate, endDate, out var rangeError))
+          return BadRequest(rangeError);
+
+        var result = await _reportService.GetCompletionRateDetailAsync(filterType, startDate, endDate, serviceId, groupBy);
+        return Ok(result);
+      }
+      catch (Exception ex)
+      {
+        return BadRequest(new { error = "GET_COMPLETION_RATE_DETAIL_FAILED", message = ex.Message });
+      }
+    }
+
+    [HttpGet("completion-rate-detail/unfinished-bookings")]
+    public async Task<IActionResult> GetUnfinishedBookings([FromQuery] string? filterType, [FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate, [FromQuery] int? serviceId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    {
+      try
+      {
+        if (!IsValidDateRange(startDate, endDate, out var rangeError))
+          return BadRequest(rangeError);
+
+        var result = await _reportService.GetUnfinishedBookingsAsync(filterType, startDate, endDate, serviceId, page, pageSize);
+        return Ok(result);
+      }
+      catch (Exception ex)
+      {
+        return BadRequest(new { error = "GET_UNFINISHED_BOOKINGS_FAILED", message = ex.Message });
+      }
+    }
+
+    [HttpGet("completion-rate-detail/export")]
+    public async Task<IActionResult> ExportUnfinishedBookings([FromQuery] string? filterType, [FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate, [FromQuery] int? serviceId)
+    {
+      try
+      {
+        if (!IsValidDateRange(startDate, endDate, out var rangeError))
+          return BadRequest(rangeError);
+
+        var bytes = await _reportService.ExportUnfinishedBookingsAsync(filterType, startDate, endDate, serviceId);
+        return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "unfinished-bookings.xlsx");
+      }
+      catch (Exception ex)
+      {
+        return BadRequest(new { error = "EXPORT_UNFINISHED_BOOKINGS_FAILED", message = ex.Message });
+      }
+    }
+
+    private static bool IsValidDateRange(DateTime? startDate, DateTime? endDate, out object? error)
+    {
+      error = null;
+      if (!startDate.HasValue || !endDate.HasValue)
+        return true;
+
+      if (startDate.Value > endDate.Value)
+      {
+        error = new { error = "INVALID_DATE_RANGE", message = "startDate must be before or equal to endDate." };
+        return false;
+      }
+
+      if ((endDate.Value.Date - startDate.Value.Date).Days > 365)
+      {
+        error = new { error = "DATE_RANGE_TOO_WIDE", message = "Date range cannot exceed 366 days." };
+        return false;
+      }
+
+      return true;
+    }
   }
 }

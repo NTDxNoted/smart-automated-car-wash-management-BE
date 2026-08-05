@@ -10,6 +10,7 @@ namespace AutoWash.Application.DTOs.Admin
     public int CancelledBookings { get; set; }
     public decimal TotalRevenue { get; set; }
     public decimal NoShowRate { get; set; }
+    public decimal CompletionRate { get; set; }
     public decimal AvgOrderValue { get; set; }
   }
 
