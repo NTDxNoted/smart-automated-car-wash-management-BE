@@ -1,6 +1,6 @@
-﻿using System;
-using System.Security.Claims;
+using System;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AutoWash.Application.DTOs;
 using AutoWash.Application.Interfaces;
@@ -9,6 +9,7 @@ namespace AutoWashPro.API.Controllers.Admin
 {
     [ApiController]
     [Route("api/admin/rewards")]
+    [Authorize(Roles = "ADMIN")]
     public class AdminRewardController : ControllerBase
     {
         private readonly IRewardService _rewardService;
@@ -18,26 +19,10 @@ namespace AutoWashPro.API.Controllers.Admin
             _rewardService = rewardService;
         }
 
-        private IActionResult? CheckAdminAccess()
-        {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (userIdClaim == null)
-                return Unauthorized(new { message = "UNAUTHORIZED: Cần đăng nhập." });
-
-            var role = User.FindFirst(ClaimTypes.Role)?.Value;
-            if (!string.Equals(role,"Admin",System.StringComparison.OrdinalIgnoreCase))
-                return StatusCode(403, new { message = "FORBIDDEN: Chỉ Admin mới được thực hiện." });
-
-            return null;
-        }
-
         // GET /api/admin/rewards
         [HttpGet]
         public async Task<IActionResult> GetAllRewards()
         {
-            var authError = CheckAdminAccess();
-            if (authError != null) return authError;
-
             var rewards = await _rewardService.GetAllRewardsAsync();
             return Ok(rewards);
         }
@@ -46,9 +31,6 @@ namespace AutoWashPro.API.Controllers.Admin
         [HttpPost]
         public async Task<IActionResult> CreateReward([FromBody] CreateRewardRequest request)
         {
-            var authError = CheckAdminAccess();
-            if (authError != null) return authError;
-
             try
             {
                 var reward = await _rewardService.CreateRewardAsync(request);
@@ -64,9 +46,6 @@ namespace AutoWashPro.API.Controllers.Admin
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateReward(int id, [FromBody] UpdateRewardRequest request)
         {
-            var authError = CheckAdminAccess();
-            if (authError != null) return authError;
-
             try
             {
                 var reward = await _rewardService.UpdateRewardAsync(id, request);
@@ -82,9 +61,6 @@ namespace AutoWashPro.API.Controllers.Admin
         [HttpPatch("{id}/toggle")]
         public async Task<IActionResult> ToggleRewardStatus(int id)
         {
-            var authError = CheckAdminAccess();
-            if (authError != null) return authError;
-
             try
             {
                 var reward = await _rewardService.ToggleRewardStatusAsync(id);
@@ -95,6 +71,24 @@ namespace AutoWashPro.API.Controllers.Admin
                 return NotFound(new { message = ex.Message });
             }
         }
+
+        // DELETE /api/admin/rewards/{id}
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteReward(int id)
+        {
+            try
+            {
+                var reward = await _rewardService.DeleteRewardAsync(id);
+                return Ok(reward);
+            }
+            catch (Exception ex) when (ex.Message.StartsWith("NOT_FOUND"))
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex) when (ex.Message.StartsWith("REWARD_IN_USE"))
+            {
+                return Conflict(new { message = ex.Message });
+            }
+        }
     }
 }
-
