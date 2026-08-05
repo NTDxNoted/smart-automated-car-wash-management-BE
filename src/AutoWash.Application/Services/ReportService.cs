@@ -78,7 +78,7 @@ namespace AutoWash.Application.Services
       };
     }
 
-    public async Task<IReadOnlyList<PopularServiceResponse>> GetPopularServicesReportAsync(DateTime? startDate, DateTime? endDate)
+    public async Task<IReadOnlyList<AutoWash.Application.DTOs.Admin.PopularServiceResponse>> GetPopularServicesReportAsync(DateTime? startDate, DateTime? endDate)
     {
       var query = _context.Bookings
           .Where(b => b.Status == BookingStatus.Completed);
@@ -106,7 +106,7 @@ namespace AutoWash.Application.Services
               {
                   serviceName = $"{serviceName} (Đã xóa)";
               }
-              return new PopularServiceResponse
+              return new AutoWash.Application.DTOs.Admin.PopularServiceResponse
               {
                   ServiceId = g.Key,
                   ServiceName = serviceName,
