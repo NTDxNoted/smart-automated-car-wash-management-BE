@@ -13,5 +13,8 @@ namespace AutoWash.Application.Interfaces
 
         // 3. Khóa/Mở khóa tài khoản (Toggle Lock)
         Task<LockCustomerResponseDto> ToggleLockCustomerAsync(int customerId);
+
+        // 4. Cập nhật ghi chú Admin
+        Task<CustomerAdminResponseDto> UpdateCustomerNotesAsync(int customerId, string? notes);
     }
 }

@@ -191,26 +191,91 @@ namespace AutoWash.Application.Services
             return promo;
         }
 
-        public async Task<IEnumerable<PromoUsageResponse>> GetPromoUsageAsync(int id)
+        public async Task<PromoDetailResponse> GetPromoUsageAsync(int id)
         {
-            var promoExists = await _dbContext.Promotions.AnyAsync(p => p.PromotionID == id);
-            if (!promoExists)
+            var promo = await _dbContext.Promotions.FirstOrDefaultAsync(p => p.PromotionID == id);
+            if (promo == null)
                 throw new KeyNotFoundException("PROMO_NOT_FOUND");
 
-            var usages = await _dbContext.Bookings
-                .Where(b => b.PromotionID == id)
-                .Select(b => new PromoUsageResponse
+            // Stats window: last 365 days, clamped to the promo's StartDate if it's younger than
+            // that — never show data older than 1 year, and never pad before the promo existed.
+            // Booking.CreatedAt is stored UTC; StartDate is a plain VN-local date (see
+            // ValidatePromoAsync above), so shift the VN boundaries by -7h before comparing.
+            var localToday = DateTime.UtcNow.AddHours(7).Date;
+            var oneYearAgoLocal = localToday.AddDays(-365);
+            var rangeStartLocal = promo.StartDate.Date > oneYearAgoLocal ? promo.StartDate.Date : oneYearAgoLocal;
+
+            var rangeStartUtc = rangeStartLocal.AddHours(-7);
+            var rangeEndUtc = localToday.AddDays(1).AddHours(-7);
+
+            var rows = await _dbContext.Bookings
+                .Where(b => b.PromotionID == id && b.CreatedAt >= rangeStartUtc && b.CreatedAt < rangeEndUtc)
+                .Select(b => new
                 {
-                    BookingId = b.BookingID,
-                    CustomerId = b.CustomerID,
+                    b.BookingID,
+                    b.CustomerID,
                     CustomerName = _dbContext.Customers.Where(c => c.CustomerID == b.CustomerID).Select(c => c.FullName).FirstOrDefault() ?? string.Empty,
-                    Phone = b.Phone,
-                    UsedAt = b.CreatedAt,
-                    DiscountAmountActual = b.DiscountApplied
+                    b.Phone,
+                    b.CreatedAt,
+                    b.DiscountApplied,
+                    b.FinalAmount
                 })
                 .ToListAsync();
 
-            return usages;
+            var totalDiscount = rows.Sum(r => r.DiscountApplied);
+            var totalRevenue = rows.Sum(r => r.FinalAmount);
+
+            // Monthly buckets span the same window used for the totals above (so the chart
+            // always sums back to the summary figures), grouped by VN-local calendar month.
+            var monthlyMap = new Dictionary<string, PromoMonthlyStatDto>();
+            var cursor = new DateTime(rangeStartLocal.Year, rangeStartLocal.Month, 1);
+            var lastMonth = new DateTime(localToday.Year, localToday.Month, 1);
+            while (cursor <= lastMonth)
+            {
+                var key = cursor.ToString("yyyy-MM");
+                monthlyMap[key] = new PromoMonthlyStatDto { Month = key, UsageCount = 0, Revenue = 0m, Discount = 0m };
+                cursor = cursor.AddMonths(1);
+            }
+
+            foreach (var row in rows)
+            {
+                var localCreatedAt = row.CreatedAt.AddHours(7);
+                var key = localCreatedAt.ToString("yyyy-MM");
+                if (monthlyMap.TryGetValue(key, out var bucket))
+                {
+                    bucket.UsageCount++;
+                    bucket.Revenue += row.FinalAmount;
+                    bucket.Discount += row.DiscountApplied;
+                }
+            }
+
+            return new PromoDetailResponse
+            {
+                PromotionId = promo.PromotionID,
+                Title = promo.Title,
+                PromoCode = promo.PromoCode,
+                RangeStart = rangeStartLocal.ToString("yyyy-MM-dd"),
+                RangeEnd = localToday.ToString("yyyy-MM-dd"),
+                TotalUsageCount = rows.Count,
+                TotalDiscountAmount = totalDiscount,
+                TotalRevenueGenerated = totalRevenue,
+                UniqueCustomerCount = rows.Select(r => r.CustomerID).Distinct().Count(),
+                EffectivenessPercentage = totalDiscount == 0 ? 0m
+                    : Math.Round((totalRevenue - totalDiscount) / totalDiscount * 100, 2),
+                MonthlyStats = monthlyMap.Values.OrderBy(m => m.Month).ToList(),
+                Usages = rows
+                    .OrderByDescending(r => r.CreatedAt)
+                    .Select(r => new PromoUsageResponse
+                    {
+                        BookingId = r.BookingID,
+                        CustomerId = r.CustomerID,
+                        CustomerName = r.CustomerName,
+                        Phone = r.Phone,
+                        UsedAt = r.CreatedAt,
+                        DiscountAmountActual = r.DiscountApplied
+                    })
+                    .ToList()
+            };
         }
     }
 }

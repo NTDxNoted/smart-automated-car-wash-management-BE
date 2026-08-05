@@ -47,6 +47,13 @@ namespace AutoWash.Application.Services
 
             var total = accounts.Count;
 
+            var customerIds = accounts.Select(c => c.CustomerID).ToList();
+            var bookingCounts = await _context.Bookings
+                .Where(b => customerIds.Contains(b.CustomerID))
+                .GroupBy(b => b.CustomerID)
+                .Select(g => new { CustomerID = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.CustomerID, x => x.Count);
+
             var pagedAccounts = accounts
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
@@ -60,7 +67,11 @@ namespace AutoWash.Application.Services
                     TotalSpending = c.TotalSpending,
                     IsLocked = c.IsLocked,
                     SuspendedUntil = c.SuspendedUntil,
-                    CreatedAt = c.CreatedAt
+                    CreatedAt = c.CreatedAt,
+                    IsWalkIn = c.Password == "WALKIN",
+                    BookingCount = bookingCounts.TryGetValue(c.CustomerID, out var count) ? count : 0,
+                    LastVisit = c.LastVisit,
+                    AdminNotes = c.AdminNotes
                 })
                 .ToList();
 
@@ -95,6 +106,23 @@ namespace AutoWash.Application.Services
                 .Where(s => serviceIds.Contains(s.ServiceID))
                 .ToDictionaryAsync(s => s.ServiceID, s => s.ServiceName);
 
+            var bookingIds = bookings.Select(b => b.BookingID).ToList();
+            var transactions = await _context.Transactions
+                .Where(t => bookingIds.Contains(t.BookingID))
+                .ToDictionaryAsync(t => t.BookingID, t => t);
+
+            var promotions = await _context.Promotions.ToDictionaryAsync(p => p.PromotionID, p => (p.Title, p.PromoCode));
+            var rewardNames = await _context.RewardsCatalog.ToDictionaryAsync(r => r.RewardID, r => r.RewardName);
+
+            string? ResolvePromotionApplied(AutoWash.Domain.Entities.Booking b)
+            {
+                if (b.PromotionID.HasValue && promotions.TryGetValue(b.PromotionID.Value, out var promo))
+                    return string.IsNullOrWhiteSpace(promo.PromoCode) ? promo.Title : $"{promo.Title} ({promo.PromoCode})";
+                if (b.RewardID.HasValue && rewardNames.TryGetValue(b.RewardID.Value, out var rewardName))
+                    return rewardName;
+                return null;
+            }
+
             var detailDto = new CustomerDetailAdminResponseDto
             {
                 CustomerId = customer.CustomerID,
@@ -106,20 +134,31 @@ namespace AutoWash.Application.Services
                 IsLocked = customer.IsLocked,
                 SuspendedUntil = customer.SuspendedUntil,
                 CreatedAt = customer.CreatedAt,
+                IsWalkIn = customer.Password == "WALKIN",
+                BookingCount = bookings.Count,
+                LastVisit = customer.LastVisit,
+                AdminNotes = customer.AdminNotes,
 
-                BookingHistory = bookings.Select(b => new BookingResponseDto
+                BookingHistory = bookings.Select(b =>
                 {
-                    BookingId = b.BookingID,
-                    LicensePlate = b.LicensePlate,
-                    ScheduledTime = b.ScheduledTime,
-                    Status = b.Status.ToString(),
-                    FinalAmount = b.FinalAmount,
-                    PointsEarned = b.PointsEarned,
-                    Service = new ServiceResponse
+                    transactions.TryGetValue(b.BookingID, out var transaction);
+                    return new CustomerBookingHistoryItemDto
                     {
-                        ServiceId = b.ServiceID,
-                        ServiceName = services.TryGetValue(b.ServiceID, out var name) ? name : "Dịch vụ không xác định"
-                    }
+                        BookingId = b.BookingID,
+                        LicensePlate = b.LicensePlate,
+                        ScheduledTime = b.ScheduledTime,
+                        Status = b.Status.ToString(),
+                        FinalAmount = b.FinalAmount,
+                        PointsEarned = b.PointsEarned,
+                        Service = new ServiceResponse
+                        {
+                            ServiceId = b.ServiceID,
+                            ServiceName = services.TryGetValue(b.ServiceID, out var name) ? name : "Dịch vụ không xác định"
+                        },
+                        PaymentMethod = transaction?.PaymentMethod.ToString(),
+                        PromotionApplied = ResolvePromotionApplied(b),
+                        InvoiceCode = transaction != null ? $"HD{transaction.TransactionID:D5}" : null
+                    };
                 }).ToList()
             };
 
@@ -147,6 +186,38 @@ namespace AutoWash.Application.Services
                 CustomerId = customer.CustomerID,
                 IsLocked = customer.IsLocked,
                 Message = customer.IsLocked ? "Tài khoản đã bị khóa." : "Tài khoản đã được mở khóa."
+            };
+        }
+
+        // --- TASK 4: CẬP NHẬT GHI CHÚ ADMIN ---
+        public async Task<CustomerAdminResponseDto> UpdateCustomerNotesAsync(int customerId, string? notes)
+        {
+            var customer = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == customerId);
+
+            if (customer == null || customer.Role == "ADMIN")
+                throw new Exception("NOT_FOUND: Không tìm thấy khách hàng để thao tác.");
+
+            customer.AdminNotes = notes;
+            await _context.SaveChangesAsync();
+
+            var tierName = await _context.Tiers
+                .Where(t => t.TierID == customer.TierID)
+                .Select(t => t.TierName)
+                .FirstOrDefaultAsync();
+
+            return new CustomerAdminResponseDto
+            {
+                CustomerId = customer.CustomerID,
+                FullName = customer.FullName,
+                Phone = customer.Phone,
+                Tier = tierName ?? (customer.TierID == 1 ? "Member" : customer.TierID.ToString()),
+                TotalSpending = customer.TotalSpending,
+                IsLocked = customer.IsLocked,
+                SuspendedUntil = customer.SuspendedUntil,
+                CreatedAt = customer.CreatedAt,
+                IsWalkIn = customer.Password == "WALKIN",
+                LastVisit = customer.LastVisit,
+                AdminNotes = customer.AdminNotes
             };
         }
     }
