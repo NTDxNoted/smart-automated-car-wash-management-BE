@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using AutoWash.Application.DTOs;
 using AutoWash.Application.Interfaces;
 
 namespace AutoWashPro.API.Controllers
@@ -61,6 +62,22 @@ namespace AutoWashPro.API.Controllers
             try
             {
                 var result = await _adminCustomerService.ToggleLockCustomerAsync(id);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                if (ex.Message.Contains("NOT_FOUND")) return NotFound(new { message = ex.Message });
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        // 4. PATCH /api/admin/customers/{id}/notes
+        [HttpPatch("{id}/notes")]
+        public async Task<IActionResult> UpdateCustomerNotes(int id, [FromBody] UpdateCustomerNotesRequest request)
+        {
+            try
+            {
+                var result = await _adminCustomerService.UpdateCustomerNotesAsync(id, request.Notes);
                 return Ok(result);
             }
             catch (Exception ex)

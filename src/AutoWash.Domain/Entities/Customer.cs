@@ -22,6 +22,7 @@ namespace AutoWash.Domain.Entities
         public DateTime? SuspendedUntil { get; set; }
         public string? ActiveSessionId { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public string? AdminNotes { get; set; }
 
         public LoyaltyAccount? LoyaltyAccount { get; set; }
         public ICollection<Booking> Bookings { get; set; } = new List<Booking>();
