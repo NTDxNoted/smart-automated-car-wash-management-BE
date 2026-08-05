@@ -1,17 +1,21 @@
+using AutoWash.Application.DTOs;
 using AutoWash.Application.DTOs.Admin;
 using AutoWash.Application.Interfaces;
 using AutoWash.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace AutoWash.Application.Services
 {
   public class ReportService : IReportService
   {
     private readonly IApplicationDbContext _context;
+    private readonly BookingSettings _bookingSettings;
 
-    public ReportService(IApplicationDbContext context)
+    public ReportService(IApplicationDbContext context, IOptions<BookingSettings>? bookingSettings = null)
     {
       _context = context;
+      _bookingSettings = bookingSettings?.Value ?? new BookingSettings { MaxParallelSlots = 3 };
     }
 
     public async Task<OverviewReportResponse> GetOverviewReportAsync(string filterType, DateTime? startDate, DateTime? endDate)
@@ -190,7 +194,7 @@ namespace AutoWash.Application.Services
 
     public async Task<PeakOccupancyResponse> GetPeakOccupancyReportAsync(DateTime startDate, DateTime endDate)
     {
-      const int maxParallelSlots = 1;
+      int maxParallelSlots = _bookingSettings.MaxParallelSlots > 0 ? _bookingSettings.MaxParallelSlots : 1;
       var eligibleStatuses = new[] { BookingStatus.Completed, BookingStatus.Pending };
 
       // ScheduledTime lưu dưới dạng UTC; dịch biên ngày VN sang UTC trước khi so sánh, giống
