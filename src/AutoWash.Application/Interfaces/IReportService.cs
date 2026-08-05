@@ -14,5 +14,8 @@ namespace AutoWash.Application.Interfaces
     Task<PeakOccupancyResponse> GetPeakOccupancyReportAsync(DateTime startDate, DateTime endDate);
     Task<PromotionRoiResponse> GetPromotionRoiReportAsync(DateTime startDate, DateTime endDate);
     Task<RevenueDetailResponse> GetRevenueDetailReportAsync(DateTime startDate, DateTime endDate, string? paymentMethod);
+    Task<CompletionRateDetailResponse> GetCompletionRateDetailAsync(string? filterType, DateTime? startDate, DateTime? endDate, int? serviceId, string? groupBy);
+    Task<UnfinishedBookingsPageDto> GetUnfinishedBookingsAsync(string? filterType, DateTime? startDate, DateTime? endDate, int? serviceId, int page, int pageSize);
+    Task<byte[]> ExportUnfinishedBookingsAsync(string? filterType, DateTime? startDate, DateTime? endDate, int? serviceId);
   }
 }

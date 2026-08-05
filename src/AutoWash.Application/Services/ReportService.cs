@@ -1,7 +1,9 @@
 using AutoWash.Application.DTOs;
 using AutoWash.Application.DTOs.Admin;
 using AutoWash.Application.Interfaces;
+using AutoWash.Domain.Entities;
 using AutoWash.Domain.Enums;
+using ClosedXML.Excel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -18,7 +20,9 @@ namespace AutoWash.Application.Services
       _bookingSettings = bookingSettings?.Value ?? new BookingSettings { MaxParallelSlots = 3 };
     }
 
-    public async Task<OverviewReportResponse> GetOverviewReportAsync(string filterType, DateTime? startDate, DateTime? endDate)
+    // Shared by GetOverviewReportAsync and GetCompletionRateDetailAsync so both endpoints resolve
+    // the same [start, end) window from filterType/startDate/endDate and never drift apart.
+    private static (DateTime Start, DateTime End) ResolveDateRangeUtc(string? filterType, DateTime? startDate, DateTime? endDate)
     {
       var now = DateTime.UtcNow;
       DateTime start = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -53,6 +57,13 @@ namespace AutoWash.Application.Services
           end = endDate.Value.Date.AddDays(1);
       }
 
+      return (start, end);
+    }
+
+    public async Task<OverviewReportResponse> GetOverviewReportAsync(string filterType, DateTime? startDate, DateTime? endDate)
+    {
+      var (start, end) = ResolveDateRangeUtc(filterType, startDate, endDate);
+
       var bookings = await _context.Bookings
           .Where(b => b.CreatedAt >= start && b.CreatedAt < end)
           .ToListAsync();
@@ -74,6 +85,7 @@ namespace AutoWash.Application.Services
         CancelledBookings = cancelledBookings,
         TotalRevenue = totalRevenue,
         NoShowRate = totalBookings == 0 ? 0m : Math.Round((decimal)noShowBookings / totalBookings, 4),
+        CompletionRate = totalBookings == 0 ? 0m : Math.Round((decimal)completedBookings / totalBookings, 4),
         AvgOrderValue = totalBookings == 0 ? 0m : Math.Round(totalRevenue / totalBookings, 2)
       };
     }
@@ -394,6 +406,474 @@ namespace AutoWash.Application.Services
         TransferRevenue = rows.Where(x => x.Transaction.PaymentMethod == PaymentMethod.Transfer).Sum(x => x.Transaction.Amount),
         Transactions = transactions
       };
+    }
+
+    public async Task<CompletionRateDetailResponse> GetCompletionRateDetailAsync(string? filterType, DateTime? startDate, DateTime? endDate, int? serviceId, string? groupBy)
+    {
+      var (start, end) = ResolveDateRangeUtc(filterType, startDate, endDate);
+      var windowLength = end - start;
+      var previousStart = start - windowLength;
+      var previousEnd = start;
+
+      var bookings = await FilteredBookingsAsync(start, end, serviceId);
+      var previousBookings = await FilteredBookingsAsync(previousStart, previousEnd, serviceId);
+
+      var totalBookings = bookings.Count;
+      var completedBookings = bookings.Count(b => b.Status == BookingStatus.Completed);
+      var cancelledBookings = bookings.Count(b => b.Status == BookingStatus.Cancelled);
+      var noShowBookings = bookings.Count(b => b.Status == BookingStatus.NoShow);
+      var failedBookings = bookings.Count(b => b.Status == BookingStatus.Failed);
+      var pendingBookings = bookings.Count(b => b.Status == BookingStatus.Pending && !b.CheckInTime.HasValue);
+      var processingBookings = bookings.Count(b => b.Status == BookingStatus.Pending && b.CheckInTime.HasValue);
+      var completionRate = totalBookings == 0 ? 0m : Math.Round((decimal)completedBookings / totalBookings, 4);
+
+      var overview = new CompletionOverviewDto
+      {
+        TotalBookings = totalBookings,
+        CompletedBookings = completedBookings,
+        CancelledBookings = cancelledBookings,
+        NoShowBookings = noShowBookings,
+        PendingBookings = pendingBookings,
+        ProcessingBookings = processingBookings,
+        FailedBookings = failedBookings,
+        CompletionRate = completionRate
+      };
+
+      var services = await _context.Services.ToListAsync();
+      var topServices = BuildTopServices(bookings, services);
+      var timeSlots = BuildTimeSlots(bookings);
+
+      var previousCompletionRate = previousBookings.Count == 0 ? 0m
+          : Math.Round((decimal)previousBookings.Count(b => b.Status == BookingStatus.Completed) / previousBookings.Count, 4);
+      var previousCancelledBookings = previousBookings.Count(b => b.Status == BookingStatus.Cancelled);
+
+      var periodComparison = new PeriodComparisonDto
+      {
+        CurrentCompletionRate = Math.Round(completionRate * 100, 2),
+        PreviousCompletionRate = Math.Round(previousCompletionRate * 100, 2),
+        DeltaPercentagePoints = Math.Round((completionRate - previousCompletionRate) * 100, 2),
+        TrendDirection = completionRate > previousCompletionRate ? "Up" : completionRate < previousCompletionRate ? "Down" : "Flat"
+      };
+
+      return new CompletionRateDetailResponse
+      {
+        StartDate = start.ToString("yyyy-MM-dd"),
+        EndDate = end.AddDays(-1).ToString("yyyy-MM-dd"),
+        FilterType = filterType ?? "custom",
+        GroupBy = string.IsNullOrWhiteSpace(groupBy) ? "day" : groupBy.ToLower(),
+        Overview = overview,
+        Formula = new CompletionRateFormulaDto
+        {
+          CompletedBookings = completedBookings,
+          TotalBookings = totalBookings,
+          ResultPercentage = Math.Round(completionRate * 100, 2)
+        },
+        StatusBreakdown = BuildStatusBreakdown(overview),
+        Trend = BuildTrend(bookings, groupBy),
+        FailureReasons = BuildFailureReasons(cancelledBookings, noShowBookings, failedBookings),
+        TopServices = topServices,
+        TimeSlots = timeSlots,
+        Alerts = BuildAlerts(overview, cancelledBookings, previousCancelledBookings, topServices),
+        PeriodComparison = periodComparison,
+        Kpi = BuildKpi(Math.Round(completionRate * 100, 2)),
+        Insights = BuildInsights(overview, periodComparison, topServices, timeSlots)
+      };
+    }
+
+    public async Task<UnfinishedBookingsPageDto> GetUnfinishedBookingsAsync(string? filterType, DateTime? startDate, DateTime? endDate, int? serviceId, int page, int pageSize)
+    {
+      var (start, end) = ResolveDateRangeUtc(filterType, startDate, endDate);
+
+      var query = _context.Bookings.Where(b => b.CreatedAt >= start && b.CreatedAt < end && b.Status != BookingStatus.Completed);
+      if (serviceId.HasValue)
+      {
+        query = query.Where(b => b.ServiceID == serviceId.Value);
+      }
+
+      var totalCount = await query.CountAsync();
+
+      var safePage = page < 1 ? 1 : page;
+      var safePageSize = pageSize < 1 ? 20 : Math.Min(pageSize, 200);
+
+      var pageBookings = await query
+          .OrderByDescending(b => b.ScheduledTime)
+          .Skip((safePage - 1) * safePageSize)
+          .Take(safePageSize)
+          .ToListAsync();
+
+      return new UnfinishedBookingsPageDto
+      {
+        Page = safePage,
+        PageSize = safePageSize,
+        TotalCount = totalCount,
+        Items = await MapUnfinishedBookingsAsync(pageBookings)
+      };
+    }
+
+    public async Task<byte[]> ExportUnfinishedBookingsAsync(string? filterType, DateTime? startDate, DateTime? endDate, int? serviceId)
+    {
+      const int maxRows = 5000;
+      var (start, end) = ResolveDateRangeUtc(filterType, startDate, endDate);
+
+      var query = _context.Bookings.Where(b => b.CreatedAt >= start && b.CreatedAt < end && b.Status != BookingStatus.Completed);
+      if (serviceId.HasValue)
+      {
+        query = query.Where(b => b.ServiceID == serviceId.Value);
+      }
+
+      var bookings = await query
+          .OrderByDescending(b => b.ScheduledTime)
+          .Take(maxRows)
+          .ToListAsync();
+
+      var items = await MapUnfinishedBookingsAsync(bookings);
+
+      using var workbook = new XLWorkbook();
+      var sheet = workbook.Worksheets.Add("Booking chua hoan thanh");
+
+      var headers = new[] { "Mã booking", "Khách hàng", "Số điện thoại", "Dịch vụ", "Thời gian hẹn", "Trạng thái" };
+      for (var i = 0; i < headers.Length; i++)
+      {
+        sheet.Cell(1, i + 1).Value = headers[i];
+        sheet.Cell(1, i + 1).Style.Font.Bold = true;
+      }
+
+      for (var i = 0; i < items.Count; i++)
+      {
+        var item = items[i];
+        var row = i + 2;
+        sheet.Cell(row, 1).Value = item.BookingId;
+        sheet.Cell(row, 2).Value = item.CustomerName;
+        sheet.Cell(row, 3).Value = item.Phone;
+        sheet.Cell(row, 4).Value = item.ServiceName;
+        sheet.Cell(row, 5).Value = item.ScheduledTime.ToString("yyyy-MM-dd HH:mm");
+        sheet.Cell(row, 6).Value = item.StatusLabel;
+      }
+
+      sheet.Columns().AdjustToContents();
+
+      using var stream = new MemoryStream();
+      workbook.SaveAs(stream);
+      return stream.ToArray();
+    }
+
+    private async Task<List<Booking>> FilteredBookingsAsync(DateTime start, DateTime end, int? serviceId)
+    {
+      var query = _context.Bookings.Where(b => b.CreatedAt >= start && b.CreatedAt < end);
+      if (serviceId.HasValue)
+      {
+        query = query.Where(b => b.ServiceID == serviceId.Value);
+      }
+      return await query.ToListAsync();
+    }
+
+    private async Task<List<UnfinishedBookingItemDto>> MapUnfinishedBookingsAsync(List<Booking> bookings)
+    {
+      var serviceNames = await _context.Services.ToDictionaryAsync(s => s.ServiceID, s => s.ServiceName);
+      var customerNames = await _context.Customers.ToDictionaryAsync(c => c.CustomerID, c => c.FullName);
+
+      return bookings.Select(b => new UnfinishedBookingItemDto
+      {
+        BookingId = b.BookingID,
+        CustomerName = customerNames.TryGetValue(b.CustomerID, out var name) && !string.IsNullOrWhiteSpace(name)
+            ? name
+            : (string.IsNullOrWhiteSpace(b.Phone) ? "Khách vãng lai" : b.Phone),
+        Phone = b.Phone,
+        ServiceName = serviceNames.TryGetValue(b.ServiceID, out var svcName) ? svcName : "Dịch vụ không xác định",
+        ScheduledTime = b.ScheduledTime,
+        Status = b.Status.ToString(),
+        StatusLabel = StatusLabel(b.Status, b.CheckInTime.HasValue)
+      }).ToList();
+    }
+
+    private static string StatusLabel(BookingStatus status, bool checkedIn) => status switch
+    {
+      BookingStatus.Completed => "Hoàn thành",
+      BookingStatus.Cancelled => "Hủy",
+      BookingStatus.NoShow => "No-show",
+      BookingStatus.Failed => "Thất bại",
+      BookingStatus.Pending => checkedIn ? "Đang xử lý" : "Đang chờ",
+      _ => status.ToString()
+    };
+
+    private static List<StatusBreakdownItemDto> BuildStatusBreakdown(CompletionOverviewDto overview)
+    {
+      var total = overview.TotalBookings;
+      var items = new (string Status, string Label, int Count)[]
+      {
+        ("Completed", "Hoàn thành", overview.CompletedBookings),
+        ("Cancelled", "Hủy", overview.CancelledBookings),
+        ("NoShow", "No-show", overview.NoShowBookings),
+        ("Pending", "Đang chờ", overview.PendingBookings),
+        ("Processing", "Đang xử lý", overview.ProcessingBookings),
+        ("Failed", "Thất bại", overview.FailedBookings)
+      };
+
+      return items
+          .Select(x => new StatusBreakdownItemDto
+          {
+            Status = x.Status,
+            Label = x.Label,
+            Count = x.Count,
+            Percentage = total == 0 ? 0m : Math.Round((decimal)x.Count * 100m / total, 2)
+          })
+          .ToList();
+    }
+
+    private static List<FailureReasonItemDto> BuildFailureReasons(int cancelledBookings, int noShowBookings, int failedBookings)
+    {
+      var unfinished = cancelledBookings + noShowBookings + failedBookings;
+      var items = new (string Status, string Label, int Count)[]
+      {
+        ("Cancelled", "Khách/Admin hủy", cancelledBookings),
+        ("NoShow", "No-show", noShowBookings),
+        ("Failed", "Sự cố / Thất bại", failedBookings)
+      };
+
+      return items
+          .Select(x => new FailureReasonItemDto
+          {
+            Status = x.Status,
+            Label = x.Label,
+            Count = x.Count,
+            Percentage = unfinished == 0 ? 0m : Math.Round((decimal)x.Count * 100m / unfinished, 2)
+          })
+          .OrderByDescending(x => x.Count)
+          .ToList();
+    }
+
+    private static List<ServiceCompletionItemDto> BuildTopServices(List<Booking> bookings, List<Service> services)
+    {
+      return bookings
+          .GroupBy(b => b.ServiceID)
+          .Select(g =>
+          {
+            var service = services.FirstOrDefault(s => s.ServiceID == g.Key);
+            var serviceName = service?.ServiceName ?? "Dịch vụ không xác định";
+            if (service?.Status == "Deleted")
+            {
+              serviceName = $"{serviceName} (Đã xóa)";
+            }
+
+            var total = g.Count();
+            var completed = g.Count(b => b.Status == BookingStatus.Completed);
+
+            return new ServiceCompletionItemDto
+            {
+              ServiceId = g.Key,
+              ServiceName = serviceName,
+              TotalBookings = total,
+              CompletedBookings = completed,
+              CompletionRate = total == 0 ? 0m : Math.Round((decimal)completed * 100m / total, 2)
+            };
+          })
+          .OrderByDescending(x => x.TotalBookings)
+          .ToList();
+    }
+
+    // Buckets are built dynamically in 2-hour windows from the ScheduledTime data actually present,
+    // rather than assuming an unverified fixed operating-hours window.
+    private static List<TimeSlotCompletionItemDto> BuildTimeSlots(List<Booking> bookings)
+    {
+      if (bookings.Count == 0)
+      {
+        return new List<TimeSlotCompletionItemDto>();
+      }
+
+      var withHour = bookings
+          .Select(b => new { Booking = b, Hour = b.ScheduledTime.Add(VietnamOffset).Hour })
+          .ToList();
+
+      var minBucket = withHour.Min(x => x.Hour) / 2 * 2;
+      var maxBucket = withHour.Max(x => x.Hour) / 2 * 2;
+
+      var slots = new List<TimeSlotCompletionItemDto>();
+      for (var bucketStart = minBucket; bucketStart <= maxBucket; bucketStart += 2)
+      {
+        var bucketEnd = bucketStart + 2;
+        var inSlot = withHour.Where(x => x.Hour >= bucketStart && x.Hour < bucketEnd).ToList();
+        if (inSlot.Count == 0)
+        {
+          continue;
+        }
+
+        var completed = inSlot.Count(x => x.Booking.Status == BookingStatus.Completed);
+        slots.Add(new TimeSlotCompletionItemDto
+        {
+          TimeSlot = $"{bucketStart:D2}:00-{bucketEnd:D2}:00",
+          TotalBookings = inSlot.Count,
+          CompletedBookings = completed,
+          CompletionRate = Math.Round((decimal)completed * 100m / inSlot.Count, 2)
+        });
+      }
+
+      return slots;
+    }
+
+    private static List<TrendPointDto> BuildTrend(List<Booking> bookings, string? groupBy)
+    {
+      var mode = string.IsNullOrWhiteSpace(groupBy) ? "day" : groupBy.ToLower();
+
+      DateTime BucketStart(DateTime createdAtUtc)
+      {
+        var vnDate = createdAtUtc.Add(VietnamOffset).Date;
+        return mode switch
+        {
+          "month" => new DateTime(vnDate.Year, vnDate.Month, 1),
+          "week" => vnDate.AddDays(-1 * ((7 + (vnDate.DayOfWeek - DayOfWeek.Monday)) % 7)),
+          _ => vnDate
+        };
+      }
+
+      string BucketLabel(DateTime bucketStart) => mode switch
+      {
+        "month" => bucketStart.ToString("yyyy-MM"),
+        "week" => $"Tuần {System.Globalization.ISOWeek.GetWeekOfYear(bucketStart)}/{bucketStart.Year}",
+        _ => bucketStart.ToString("yyyy-MM-dd")
+      };
+
+      return bookings
+          .GroupBy(b => BucketStart(b.CreatedAt))
+          .OrderBy(g => g.Key)
+          .Select(g =>
+          {
+            var total = g.Count();
+            var completed = g.Count(b => b.Status == BookingStatus.Completed);
+            var cancelled = g.Count(b => b.Status == BookingStatus.Cancelled);
+            var noShow = g.Count(b => b.Status == BookingStatus.NoShow);
+
+            return new TrendPointDto
+            {
+              PeriodLabel = BucketLabel(g.Key),
+              PeriodStart = g.Key,
+              TotalBookings = total,
+              CompletedBookings = completed,
+              CancelledBookings = cancelled,
+              NoShowBookings = noShow,
+              CompletionRate = total == 0 ? 0m : Math.Round((decimal)completed * 100m / total, 2),
+              CancellationRate = total == 0 ? 0m : Math.Round((decimal)cancelled * 100m / total, 2),
+              NoShowRate = total == 0 ? 0m : Math.Round((decimal)noShow * 100m / total, 2)
+            };
+          })
+          .ToList();
+    }
+
+    private static List<AlertDto> BuildAlerts(CompletionOverviewDto overview, int cancelledBookings, int previousCancelledBookings, List<ServiceCompletionItemDto> topServices)
+    {
+      var alerts = new List<AlertDto>();
+      if (overview.TotalBookings == 0)
+      {
+        return alerts;
+      }
+
+      var completionPercentage = Math.Round(overview.CompletionRate * 100, 2);
+      if (completionPercentage < 80m)
+      {
+        alerts.Add(new AlertDto
+        {
+          Severity = "Critical",
+          Code = "LOW_COMPLETION_RATE",
+          Message = $"Tỷ lệ hoàn thành ({completionPercentage:0.##}%) đang dưới ngưỡng 80%."
+        });
+      }
+
+      var noShowPercentage = Math.Round((decimal)overview.NoShowBookings * 100m / overview.TotalBookings, 2);
+      if (noShowPercentage > 10m)
+      {
+        alerts.Add(new AlertDto
+        {
+          Severity = "Warning",
+          Code = "HIGH_NOSHOW_RATE",
+          Message = $"Tỷ lệ No-show ({noShowPercentage:0.##}%) đang trên ngưỡng 10%."
+        });
+      }
+
+      if (previousCancelledBookings > 0)
+      {
+        var increase = (decimal)(cancelledBookings - previousCancelledBookings) * 100m / previousCancelledBookings;
+        if (increase > 20m)
+        {
+          alerts.Add(new AlertDto
+          {
+            Severity = "Warning",
+            Code = "CANCELLATION_SPIKE",
+            Message = $"Số booking bị hủy tăng {increase:0.##}% so với kỳ trước."
+          });
+        }
+      }
+
+      foreach (var service in topServices.Where(s => s.TotalBookings >= 5))
+      {
+        var notCompletedRate = 100m - service.CompletionRate;
+        if (notCompletedRate > 20m)
+        {
+          alerts.Add(new AlertDto
+          {
+            Severity = "Warning",
+            Code = "SERVICE_HIGH_CANCEL_RATE",
+            Message = $"Dịch vụ '{service.ServiceName}' có tỷ lệ không hoàn thành cao ({notCompletedRate:0.##}%)."
+          });
+        }
+      }
+
+      return alerts;
+    }
+
+    private static KpiDto BuildKpi(decimal completionPercentage)
+    {
+      if (completionPercentage >= 95m)
+      {
+        return new KpiDto { Level = "Excellent", Label = "Xuất sắc", Color = "Green" };
+      }
+      if (completionPercentage >= 90m)
+      {
+        return new KpiDto { Level = "Good", Label = "Tốt", Color = "Green" };
+      }
+      if (completionPercentage >= 80m)
+      {
+        return new KpiDto { Level = "Average", Label = "Trung bình", Color = "Yellow" };
+      }
+      return new KpiDto { Level = "NeedsImprovement", Label = "Cần cải thiện", Color = "Red" };
+    }
+
+    private static List<string> BuildInsights(CompletionOverviewDto overview, PeriodComparisonDto comparison, List<ServiceCompletionItemDto> topServices, List<TimeSlotCompletionItemDto> timeSlots)
+    {
+      var insights = new List<string>();
+      if (overview.TotalBookings == 0)
+      {
+        return insights;
+      }
+
+      var completionPercentage = Math.Round(overview.CompletionRate * 100, 2);
+      if (comparison.DeltaPercentagePoints > 0)
+      {
+        insights.Add($"Tỷ lệ hoàn thành đạt {completionPercentage:0.##}%, tăng {comparison.DeltaPercentagePoints:0.##} điểm % so với kỳ trước.");
+      }
+      else if (comparison.DeltaPercentagePoints < 0)
+      {
+        insights.Add($"Tỷ lệ hoàn thành đạt {completionPercentage:0.##}%, giảm {Math.Abs(comparison.DeltaPercentagePoints):0.##} điểm % so với kỳ trước.");
+      }
+      else
+      {
+        insights.Add($"Tỷ lệ hoàn thành đạt {completionPercentage:0.##}%, không đổi so với kỳ trước.");
+      }
+
+      var noShowPercentage = Math.Round((decimal)overview.NoShowBookings * 100m / overview.TotalBookings, 2);
+      insights.Add($"Tỷ lệ No-show hiện ở mức {noShowPercentage:0.##}%.");
+
+      var bestService = topServices.Where(s => s.TotalBookings >= 5).OrderByDescending(s => s.CompletionRate).FirstOrDefault();
+      if (bestService != null)
+      {
+        insights.Add($"Dịch vụ '{bestService.ServiceName}' có tỷ lệ hoàn thành cao nhất ({bestService.CompletionRate:0.##}%).");
+      }
+
+      var worstSlot = timeSlots.Where(s => s.TotalBookings >= 5).OrderBy(s => s.CompletionRate).FirstOrDefault();
+      if (worstSlot != null && worstSlot.CompletionRate < 90m)
+      {
+        insights.Add($"Khung giờ {worstSlot.TimeSlot} có tỷ lệ hoàn thành thấp nhất ({worstSlot.CompletionRate:0.##}%), nên cân nhắc tăng nhân sự hoặc xác nhận lịch trước với khách.");
+      }
+
+      return insights;
     }
 
   }

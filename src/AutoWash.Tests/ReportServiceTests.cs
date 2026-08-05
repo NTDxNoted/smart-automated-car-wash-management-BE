@@ -50,6 +50,7 @@ namespace AutoWash.Tests.Application.Services
       Assert.Equal(1, result.CancelledBookings);
       Assert.Equal(300m, result.TotalRevenue);
       Assert.Equal(0.20m, result.NoShowRate);
+      Assert.Equal(0.40m, result.CompletionRate);
       Assert.Equal(60m, result.AvgOrderValue);
     }
 
@@ -229,6 +230,287 @@ namespace AutoWash.Tests.Application.Services
       Assert.Equal(100000m, result.CashRevenue);
       Assert.Equal(0m, result.TransferRevenue);
       Assert.Single(result.Transactions);
+    }
+
+    [Fact]
+    public async Task GetCompletionRateDetailAsync_ComputesOverviewAndPendingProcessingSplit()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      var day = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+
+      db.Bookings.AddRange(
+          new Booking { BookingID = 1, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Completed, CreatedAt = day.AddHours(1) },
+          new Booking { BookingID = 2, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Completed, CreatedAt = day.AddHours(2) },
+          new Booking { BookingID = 3, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Cancelled, CreatedAt = day.AddHours(3) },
+          new Booking { BookingID = 4, CustomerID = 1, ServiceID = 1, Status = BookingStatus.NoShow, CreatedAt = day.AddHours(4) },
+          new Booking { BookingID = 5, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Failed, CreatedAt = day.AddHours(5) },
+          new Booking { BookingID = 6, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Pending, CheckInTime = null, CreatedAt = day.AddHours(6) },
+          new Booking { BookingID = 7, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Pending, CheckInTime = day.AddHours(7), CreatedAt = day.AddHours(7) }
+      );
+      await db.SaveChangesAsync();
+
+      var result = await service.GetCompletionRateDetailAsync(null, day, day, null, "day");
+
+      Assert.Equal(7, result.Overview.TotalBookings);
+      Assert.Equal(2, result.Overview.CompletedBookings);
+      Assert.Equal(1, result.Overview.CancelledBookings);
+      Assert.Equal(1, result.Overview.NoShowBookings);
+      Assert.Equal(1, result.Overview.FailedBookings);
+      Assert.Equal(1, result.Overview.PendingBookings);
+      Assert.Equal(1, result.Overview.ProcessingBookings);
+      Assert.Equal(2.0 / 7.0, (double)result.Overview.CompletionRate, 4);
+      Assert.Equal(2, result.Formula.CompletedBookings);
+      Assert.Equal(7, result.Formula.TotalBookings);
+
+      var breakdownTotal = result.StatusBreakdown.Sum(x => x.Percentage);
+      Assert.InRange(breakdownTotal, 99.9m, 100.1m);
+    }
+
+    [Fact]
+    public async Task GetCompletionRateDetailAsync_TrendGroupsByDay()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      var start = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+      var end = new DateTime(2026, 8, 2, 0, 0, 0, DateTimeKind.Utc);
+
+      db.Bookings.AddRange(
+          new Booking { BookingID = 1, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Completed, CreatedAt = start.AddHours(1) },
+          new Booking { BookingID = 2, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Cancelled, CreatedAt = start.AddHours(2) },
+          new Booking { BookingID = 3, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Completed, CreatedAt = end.AddHours(1) },
+          new Booking { BookingID = 4, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Completed, CreatedAt = end.AddHours(2) }
+      );
+      await db.SaveChangesAsync();
+
+      var result = await service.GetCompletionRateDetailAsync(null, start, end, null, "day");
+
+      Assert.Equal(2, result.Trend.Count);
+      var day1 = result.Trend[0];
+      Assert.Equal(2, day1.TotalBookings);
+      Assert.Equal(50m, day1.CompletionRate);
+      var day2 = result.Trend[1];
+      Assert.Equal(2, day2.TotalBookings);
+      Assert.Equal(100m, day2.CompletionRate);
+    }
+
+    [Fact]
+    public async Task GetCompletionRateDetailAsync_FailureReasonsBreakdown()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      var day = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+
+      db.Bookings.AddRange(
+          new Booking { BookingID = 1, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Completed, CreatedAt = day.AddHours(1) },
+          new Booking { BookingID = 2, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Cancelled, CreatedAt = day.AddHours(2) },
+          new Booking { BookingID = 3, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Cancelled, CreatedAt = day.AddHours(3) },
+          new Booking { BookingID = 4, CustomerID = 1, ServiceID = 1, Status = BookingStatus.NoShow, CreatedAt = day.AddHours(4) },
+          new Booking { BookingID = 5, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Failed, CreatedAt = day.AddHours(5) }
+      );
+      await db.SaveChangesAsync();
+
+      var result = await service.GetCompletionRateDetailAsync(null, day, day, null, "day");
+
+      var cancelled = result.FailureReasons.Single(x => x.Status == "Cancelled");
+      var noShow = result.FailureReasons.Single(x => x.Status == "NoShow");
+      var failed = result.FailureReasons.Single(x => x.Status == "Failed");
+
+      // Mẫu 4 booking chưa hoàn thành (2 Cancelled, 1 NoShow, 1 Failed) — % tính trên nhóm này, không tính trên tổng.
+      Assert.Equal(50m, cancelled.Percentage);
+      Assert.Equal(25m, noShow.Percentage);
+      Assert.Equal(25m, failed.Percentage);
+    }
+
+    [Fact]
+    public async Task GetCompletionRateDetailAsync_TopServicesComputesPerServiceRate()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      var day = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+
+      db.Services.AddRange(
+          new Service { ServiceID = 1, ServiceName = "Rửa thường", ServiceCategory = "Basic", Description = "d", Price = 50000m, Duration = 30, Status = "Active" },
+          new Service { ServiceID = 2, ServiceName = "Rửa cao cấp", ServiceCategory = "Premium", Description = "d", Price = 150000m, Duration = 60, Status = "Active" }
+      );
+      db.Bookings.AddRange(
+          new Booking { BookingID = 1, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Completed, CreatedAt = day.AddHours(1) },
+          new Booking { BookingID = 2, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Cancelled, CreatedAt = day.AddHours(2) },
+          new Booking { BookingID = 3, CustomerID = 1, ServiceID = 2, Status = BookingStatus.Completed, CreatedAt = day.AddHours(3) },
+          new Booking { BookingID = 4, CustomerID = 1, ServiceID = 2, Status = BookingStatus.Completed, CreatedAt = day.AddHours(4) }
+      );
+      await db.SaveChangesAsync();
+
+      var result = await service.GetCompletionRateDetailAsync(null, day, day, null, "day");
+
+      var basic = result.TopServices.Single(x => x.ServiceId == 1);
+      var premium = result.TopServices.Single(x => x.ServiceId == 2);
+
+      Assert.Equal(50m, basic.CompletionRate);
+      Assert.Equal(100m, premium.CompletionRate);
+    }
+
+    [Fact]
+    public async Task GetCompletionRateDetailAsync_TopServicesFilteredByServiceId()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      var day = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+
+      db.Bookings.AddRange(
+          new Booking { BookingID = 1, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Completed, CreatedAt = day.AddHours(1) },
+          new Booking { BookingID = 2, CustomerID = 1, ServiceID = 2, Status = BookingStatus.Completed, CreatedAt = day.AddHours(2) }
+      );
+      await db.SaveChangesAsync();
+
+      var result = await service.GetCompletionRateDetailAsync(null, day, day, 1, "day");
+
+      Assert.Equal(1, result.Overview.TotalBookings);
+    }
+
+    [Fact]
+    public async Task GetCompletionRateDetailAsync_TimeSlotsBucketByTwoHourVietnamWindow()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      var day = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+
+      // VN = UTC+7. UTC 02:00 -> VN 09:00 (slot 08:00-10:00). UTC 08:00 -> VN 15:00 (slot 14:00-16:00).
+      db.Bookings.AddRange(
+          new Booking { BookingID = 1, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Completed, ScheduledTime = day.AddHours(2), CreatedAt = day.AddHours(2) },
+          new Booking { BookingID = 2, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Cancelled, ScheduledTime = day.AddHours(2), CreatedAt = day.AddHours(2) },
+          new Booking { BookingID = 3, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Completed, ScheduledTime = day.AddHours(8), CreatedAt = day.AddHours(8) }
+      );
+      await db.SaveChangesAsync();
+
+      var result = await service.GetCompletionRateDetailAsync(null, day, day, null, "day");
+
+      var morningSlot = result.TimeSlots.Single(x => x.TimeSlot == "08:00-10:00");
+      var afternoonSlot = result.TimeSlots.Single(x => x.TimeSlot == "14:00-16:00");
+
+      Assert.Equal(2, morningSlot.TotalBookings);
+      Assert.Equal(50m, morningSlot.CompletionRate);
+      Assert.Equal(1, afternoonSlot.TotalBookings);
+      Assert.Equal(100m, afternoonSlot.CompletionRate);
+    }
+
+    [Fact]
+    public async Task GetCompletionRateDetailAsync_AlertsTriggerAtDocumentedThresholds()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      var start = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+      var previousDay = start.AddDays(-1);
+
+      // Kỳ trước: 2 booking hủy — làm mốc so sánh cho cảnh báo tăng đột biến tỷ lệ hủy.
+      db.Bookings.AddRange(
+          new Booking { BookingID = 100, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Cancelled, CreatedAt = previousDay.AddHours(1) },
+          new Booking { BookingID = 101, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Cancelled, CreatedAt = previousDay.AddHours(2) },
+          new Booking { BookingID = 102, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Completed, CreatedAt = previousDay.AddHours(3) }
+      );
+
+      // Kỳ hiện tại: completion rate 20% (<80%), no-show 30% (>10%), 3 booking hủy so với 2 kỳ trước (+50% > 20%).
+      db.Bookings.AddRange(
+          new Booking { BookingID = 1, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Completed, CreatedAt = start.AddHours(1) },
+          new Booking { BookingID = 2, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Cancelled, CreatedAt = start.AddHours(2) },
+          new Booking { BookingID = 3, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Cancelled, CreatedAt = start.AddHours(3) },
+          new Booking { BookingID = 4, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Cancelled, CreatedAt = start.AddHours(4) },
+          new Booking { BookingID = 5, CustomerID = 1, ServiceID = 1, Status = BookingStatus.NoShow, CreatedAt = start.AddHours(5) },
+          new Booking { BookingID = 6, CustomerID = 1, ServiceID = 1, Status = BookingStatus.NoShow, CreatedAt = start.AddHours(6) },
+          new Booking { BookingID = 7, CustomerID = 1, ServiceID = 1, Status = BookingStatus.NoShow, CreatedAt = start.AddHours(7) },
+          new Booking { BookingID = 8, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Pending, CreatedAt = start.AddHours(8) },
+          new Booking { BookingID = 9, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Pending, CreatedAt = start.AddHours(9) },
+          new Booking { BookingID = 10, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Pending, CreatedAt = start.AddHours(10) }
+      );
+      await db.SaveChangesAsync();
+
+      var result = await service.GetCompletionRateDetailAsync(null, start, start, null, "day");
+
+      Assert.Contains(result.Alerts, a => a.Code == "LOW_COMPLETION_RATE");
+      Assert.Contains(result.Alerts, a => a.Code == "HIGH_NOSHOW_RATE");
+      Assert.Contains(result.Alerts, a => a.Code == "CANCELLATION_SPIKE");
+    }
+
+    [Fact]
+    public async Task GetCompletionRateDetailAsync_PeriodComparisonAndKpiLevel()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      var start = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+      var previousDay = start.AddDays(-1);
+
+      // Kỳ trước: 1/2 hoàn thành = 50%.
+      db.Bookings.AddRange(
+          new Booking { BookingID = 100, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Completed, CreatedAt = previousDay.AddHours(1) },
+          new Booking { BookingID = 101, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Cancelled, CreatedAt = previousDay.AddHours(2) }
+      );
+
+      // Kỳ hiện tại: 19/20 hoàn thành = 95% -> KPI "Excellent", tăng 45 điểm % so với kỳ trước.
+      for (var i = 1; i <= 19; i++)
+      {
+        db.Bookings.Add(new Booking { BookingID = i, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Completed, CreatedAt = start.AddMinutes(i) });
+      }
+      db.Bookings.Add(new Booking { BookingID = 20, CustomerID = 1, ServiceID = 1, Status = BookingStatus.Cancelled, CreatedAt = start.AddMinutes(20) });
+      await db.SaveChangesAsync();
+
+      var result = await service.GetCompletionRateDetailAsync(null, start, start, null, "day");
+
+      Assert.Equal(95m, result.PeriodComparison.CurrentCompletionRate);
+      Assert.Equal(50m, result.PeriodComparison.PreviousCompletionRate);
+      Assert.Equal(45m, result.PeriodComparison.DeltaPercentagePoints);
+      Assert.Equal("Up", result.PeriodComparison.TrendDirection);
+      Assert.Equal("Excellent", result.Kpi.Level);
+    }
+
+    [Fact]
+    public async Task GetUnfinishedBookingsAsync_ExcludesCompletedAndPaginates()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      var day = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+
+      db.Bookings.AddRange(
+          new Booking { BookingID = 1, CustomerID = 1, ServiceID = 1, Phone = "0901", Status = BookingStatus.Completed, ScheduledTime = day.AddHours(1), CreatedAt = day.AddHours(1) },
+          new Booking { BookingID = 2, CustomerID = 1, ServiceID = 1, Phone = "0902", Status = BookingStatus.Cancelled, ScheduledTime = day.AddHours(2), CreatedAt = day.AddHours(2) },
+          new Booking { BookingID = 3, CustomerID = 1, ServiceID = 1, Phone = "0903", Status = BookingStatus.NoShow, ScheduledTime = day.AddHours(3), CreatedAt = day.AddHours(3) }
+      );
+      await db.SaveChangesAsync();
+
+      var page1 = await service.GetUnfinishedBookingsAsync(null, day, day, null, page: 1, pageSize: 1);
+
+      Assert.Equal(2, page1.TotalCount);
+      Assert.Single(page1.Items);
+      // OrderByDescending(ScheduledTime) -> booking 3 (giờ muộn nhất) đứng đầu trang 1.
+      Assert.Equal(3, page1.Items[0].BookingId);
+      Assert.All(page1.Items, i => Assert.NotEqual("Completed", i.Status));
+    }
+
+    [Fact]
+    public async Task ExportUnfinishedBookingsAsync_ReturnsValidXlsxBytes()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      var day = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+
+      db.Bookings.Add(new Booking { BookingID = 1, CustomerID = 1, ServiceID = 1, Phone = "0901", Status = BookingStatus.Cancelled, ScheduledTime = day, CreatedAt = day });
+      await db.SaveChangesAsync();
+
+      var bytes = await service.ExportUnfinishedBookingsAsync(null, day, day, null);
+
+      Assert.NotEmpty(bytes);
+      // .xlsx là file zip -> 2 byte đầu phải là chữ ký "PK" (0x50 0x4B).
+      Assert.Equal(0x50, bytes[0]);
+      Assert.Equal(0x4B, bytes[1]);
     }
   }
 }
