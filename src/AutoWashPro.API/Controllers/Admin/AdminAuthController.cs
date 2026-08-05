@@ -71,7 +71,7 @@ namespace AutoWashPro.API.Controllers.Admin
         }
 
         [HttpPost("auth/logout")]
-        [Authorize]
+        [Authorize(Roles = "ADMIN")]
         public async Task<IActionResult> Logout()
         {
             try

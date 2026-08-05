@@ -135,6 +135,22 @@ namespace AutoWash.Application.Services
             return MapToResponse(reward);
         }
 
+        public async Task<RewardResponse> DeleteRewardAsync(int rewardId)
+        {
+            var reward = await _context.RewardsCatalog.FirstOrDefaultAsync(r => r.RewardID == rewardId);
+            if (reward == null)
+                throw new Exception("NOT_FOUND: Không tìm thấy phần thưởng.");
+
+            var isUsed = await _context.Bookings.AnyAsync(b => b.RewardID == rewardId);
+            if (isUsed)
+                throw new Exception("REWARD_IN_USE: Voucher đã được sử dụng trong lịch sử đơn hàng, không thể xóa. Hãy dùng nút Ngưng hoạt động.");
+
+            var response = MapToResponse(reward);
+            _context.RewardsCatalog.Remove(reward);
+            await _context.SaveChangesAsync();
+            return response;
+        }
+
         private static RewardResponse MapToResponse(RewardsCatalog r) => new RewardResponse
         {
             RewardId = r.RewardID,

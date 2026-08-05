@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using AutoWash.Application.Common;
 using AutoWash.Application.Common.Validation;
 using AutoWash.Application.DTOs.Admin;
 using AutoWash.Application.Interfaces;
@@ -99,8 +100,8 @@ namespace AutoWash.Application.Services
                     CreatedAt = b.CreatedAt,
                     IsWalkIn = b.IsWalkIn,
                     CompletedAt = b.CompletedAt,
-                    InvoiceCode = transaction != null ? $"HD{transaction.TransactionID:D5}" : null,
-                    PromotionApplied = GetPromotionApplied(b, promotions, rewardNames)
+                    InvoiceCode = transaction != null ? BookingDisplayHelper.FormatInvoiceCode(transaction.TransactionID) : null,
+                    PromotionApplied = BookingDisplayHelper.GetPromotionApplied(b.PromotionID, b.RewardID, promotions, rewardNames)
                 };
             });
         }
@@ -141,25 +142,9 @@ namespace AutoWash.Application.Services
                 CreatedAt = booking.CreatedAt,
                 IsWalkIn = booking.IsWalkIn,
                 CompletedAt = booking.CompletedAt,
-                InvoiceCode = transaction != null ? $"HD{transaction.TransactionID:D5}" : null,
-                PromotionApplied = GetPromotionApplied(booking, promotions, rewardNames)
+                InvoiceCode = transaction != null ? BookingDisplayHelper.FormatInvoiceCode(transaction.TransactionID) : null,
+                PromotionApplied = BookingDisplayHelper.GetPromotionApplied(booking.PromotionID, booking.RewardID, promotions, rewardNames)
             };
-        }
-
-        private static string? GetPromotionApplied(
-            Booking booking,
-            Dictionary<int, (string Title, string PromoCode)> promotions,
-            Dictionary<int, string> rewardNames)
-        {
-            if (booking.PromotionID.HasValue && promotions.TryGetValue(booking.PromotionID.Value, out var promo))
-            {
-                return string.IsNullOrWhiteSpace(promo.PromoCode) ? promo.Title : $"{promo.Title} ({promo.PromoCode})";
-            }
-            if (booking.RewardID.HasValue && rewardNames.TryGetValue(booking.RewardID.Value, out var rewardName))
-            {
-                return rewardName;
-            }
-            return null;
         }
 
         public async Task<AdminBookingListResponse> CreateWalkInBookingAsync(CreateWalkInBookingRequest request)

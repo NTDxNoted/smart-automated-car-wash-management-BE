@@ -1,6 +1,6 @@
-﻿using System;
-using System.Security.Claims;
+using System;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AutoWash.Application.DTOs;
 using AutoWash.Application.Interfaces;
@@ -9,6 +9,7 @@ namespace AutoWashPro.API.Controllers.Admin
 {
     [ApiController]
     [Route("api/admin/services")]
+    [Authorize(Roles = "ADMIN")]
     public class AdminServiceController : ControllerBase
     {
         private readonly IServiceService _serviceService;
@@ -18,26 +19,10 @@ namespace AutoWashPro.API.Controllers.Admin
             _serviceService = serviceService;
         }
 
-        private IActionResult? CheckAdminAccess()
-        {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (userIdClaim == null)
-                return Unauthorized(new { message = "UNAUTHORIZED: Cần đăng nhập." });
-
-            var role = User.FindFirst(ClaimTypes.Role)?.Value;
-            if (!string.Equals(role,"Admin",System.StringComparison.OrdinalIgnoreCase))
-                return StatusCode(403, new { message = "FORBIDDEN: Chỉ Admin mới được thực hiện." });
-
-            return null;
-        }
-
         // GET /api/admin/services
         [HttpGet]
         public async Task<IActionResult> GetServices()
         {
-            var authError = CheckAdminAccess();
-            if (authError != null) return authError;
-
             var services = await _serviceService.GetAllServicesForAdminAsync();
             return Ok(services);
         }
@@ -46,9 +31,6 @@ namespace AutoWashPro.API.Controllers.Admin
         [HttpPost]
         public async Task<IActionResult> CreateService([FromBody] CreateServiceRequest request)
         {
-            var authError = CheckAdminAccess();
-            if (authError != null) return authError;
-
             try
             {
                 var service = await _serviceService.CreateServiceAsync(request);
@@ -64,9 +46,6 @@ namespace AutoWashPro.API.Controllers.Admin
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateService(int id, [FromBody] UpdateServiceRequest request)
         {
-            var authError = CheckAdminAccess();
-            if (authError != null) return authError;
-
             try
             {
                 var service = await _serviceService.UpdateServiceAsync(id, request);
@@ -82,9 +61,6 @@ namespace AutoWashPro.API.Controllers.Admin
         [HttpPatch("{id}/status")]
         public async Task<IActionResult> ToggleServiceStatus(int id)
         {
-            var authError = CheckAdminAccess();
-            if (authError != null) return authError;
-
             try
             {
                 var service = await _serviceService.ToggleServiceStatusAsync(id);
@@ -100,9 +76,6 @@ namespace AutoWashPro.API.Controllers.Admin
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteService(int id)
         {
-            var authError = CheckAdminAccess();
-            if (authError != null) return authError;
-
             try
             {
                 var service = await _serviceService.DeleteServiceAsync(id);
@@ -115,4 +88,3 @@ namespace AutoWashPro.API.Controllers.Admin
         }
     }
 }
-

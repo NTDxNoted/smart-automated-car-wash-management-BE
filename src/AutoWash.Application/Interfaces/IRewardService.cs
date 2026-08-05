@@ -11,5 +11,6 @@ namespace AutoWash.Application.Interfaces
         Task<RewardResponse> CreateRewardAsync(CreateRewardRequest request);
         Task<RewardResponse> UpdateRewardAsync(int rewardId, UpdateRewardRequest request);
         Task<RewardResponse> ToggleRewardStatusAsync(int rewardId);
+        Task<RewardResponse> DeleteRewardAsync(int rewardId);
     }
 }
