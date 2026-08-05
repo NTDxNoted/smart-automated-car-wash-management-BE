@@ -12,6 +12,6 @@ namespace AutoWash.Application.Interfaces
         Task<Promotion> CreatePromotionAsync(CreatePromoRequest request);
         Task<Promotion> UpdatePromotionAsync(int id, UpdatePromoRequest request);
         Task<Promotion> TogglePromoActiveAsync(int id);
-        Task<IEnumerable<PromoUsageResponse>> GetPromoUsageAsync(int id);
+        Task<PromoDetailResponse> GetPromoUsageAsync(int id);
     }
 }

@@ -423,5 +423,113 @@ namespace AutoWash.Tests.Application.Services
                 () => service.UpdatePromotionAsync(2, request));
             Assert.Equal("PROMO_CODE_EXISTS", exception.Message);
         }
+
+        [Fact]
+        public async Task GetPromoUsageAsync_ExcludesBookingsOlderThan365Days()
+        {
+            var dbContext = CreateDbContext();
+            var service = new PromotionService(dbContext);
+
+            var promo = new Promotion
+            {
+                PromotionID = 1,
+                Title = "Old Promo",
+                PromoCode = "OLD365",
+                DiscountType = "Fixed_Amount",
+                DiscountValue = 20000m,
+                StartDate = DateTime.UtcNow.AddDays(-800),
+                EndDate = DateTime.UtcNow.AddDays(30),
+                IsActive = true
+            };
+
+            var oldBooking = new Booking
+            {
+                BookingID = 1,
+                CustomerID = 1,
+                PromotionID = 1,
+                CreatedAt = DateTime.UtcNow.AddDays(-400), // older than 365 days -> excluded
+                DiscountApplied = 10000m,
+                FinalAmount = 100000m,
+                Status = BookingStatus.Completed
+            };
+
+            var recentBooking = new Booking
+            {
+                BookingID = 2,
+                CustomerID = 2,
+                PromotionID = 1,
+                CreatedAt = DateTime.UtcNow.AddDays(-10), // within 365 days -> included
+                DiscountApplied = 15000m,
+                FinalAmount = 150000m,
+                Status = BookingStatus.Completed
+            };
+
+            dbContext.Promotions.Add(promo);
+            dbContext.Bookings.AddRange(oldBooking, recentBooking);
+            await dbContext.SaveChangesAsync();
+
+            var result = await service.GetPromoUsageAsync(1);
+
+            Assert.Equal(1, result.TotalUsageCount);
+            Assert.Equal(15000m, result.TotalDiscountAmount);
+            Assert.Equal(150000m, result.TotalRevenueGenerated);
+            Assert.Single(result.Usages);
+            Assert.Equal(2, result.Usages[0].BookingId);
+        }
+
+        [Fact]
+        public async Task GetPromoUsageAsync_ClampsRangeStartToPromoStartDateWhenYounger()
+        {
+            var dbContext = CreateDbContext();
+            var service = new PromotionService(dbContext);
+
+            var promoStart = DateTime.UtcNow.AddDays(-30).Date;
+            var promo = new Promotion
+            {
+                PromotionID = 1,
+                Title = "New Promo",
+                PromoCode = "NEW30",
+                DiscountType = "Fixed_Amount",
+                DiscountValue = 10000m,
+                StartDate = promoStart,
+                EndDate = DateTime.UtcNow.AddDays(30),
+                IsActive = true
+            };
+
+            dbContext.Promotions.Add(promo);
+            await dbContext.SaveChangesAsync();
+
+            var result = await service.GetPromoUsageAsync(1);
+
+            Assert.Equal(promoStart.ToString("yyyy-MM-dd"), result.RangeStart);
+        }
+
+        [Fact]
+        public async Task GetPromoUsageAsync_ClampsRangeStartTo365DaysWhenPromoOlder()
+        {
+            var dbContext = CreateDbContext();
+            var service = new PromotionService(dbContext);
+
+            var promo = new Promotion
+            {
+                PromotionID = 1,
+                Title = "Long Running Promo",
+                PromoCode = "LONGRUN",
+                DiscountType = "Fixed_Amount",
+                DiscountValue = 10000m,
+                StartDate = DateTime.UtcNow.AddDays(-800).Date,
+                EndDate = DateTime.UtcNow.AddDays(30),
+                IsActive = true
+            };
+
+            dbContext.Promotions.Add(promo);
+            await dbContext.SaveChangesAsync();
+
+            var expectedStart = DateTime.UtcNow.AddHours(7).Date.AddDays(-365);
+
+            var result = await service.GetPromoUsageAsync(1);
+
+            Assert.Equal(expectedStart.ToString("yyyy-MM-dd"), result.RangeStart);
+        }
     }
 }
