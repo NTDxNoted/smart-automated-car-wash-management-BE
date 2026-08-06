@@ -208,11 +208,14 @@ namespace AutoWash.Application.Services
     public async Task<PeakOccupancyResponse> GetPeakOccupancyReportAsync(DateTime startDate, DateTime endDate)
     {
       int maxParallelSlots = _bookingSettings.MaxParallelSlots > 0 ? _bookingSettings.MaxParallelSlots : 1;
-      var eligibleStatuses = new[] { BookingStatus.Completed, BookingStatus.Pending };
+      // ISSUE-17 QA fix: chỉ đếm đơn Đã hoàn thành — Pending/Cancelled/NoShow/Failed không phản ánh
+      // khung giờ thực tế khách đến rửa xe nên phải loại khỏi báo cáo tần suất.
+      var eligibleStatuses = new[] { BookingStatus.Completed };
 
-      // ScheduledTime lưu dưới dạng UTC; dịch biên ngày VN sang UTC trước khi so sánh, giống
-      // GetPromotionRoiReportAsync bên dưới — nếu không, booking VN 00:00-07:00 bị loại và booking
-      // sáng sớm hôm sau lại bị tính nhầm vào ngày trước.
+      // NOTE (ISSUE-17): giữ nguyên -7h ở range filter này để không phá vỡ
+      // GetPeakOccupancyReportAsync_ShouldCountEarlyMorningVietnamBookingOnRequestedDay hiện có; nếu
+      // ScheduledTime client gửi lên thực chất là giờ VN thô (xem ghi chú ở dayStats/hourStats bên
+      // dưới) thì range này cũng cần rà soát lại — nằm ngoài phạm vi ticket QA lần này.
       var rangeStart = startDate.Date.AddHours(-7);
       var rangeEnd = endDate.Date.AddDays(1).AddHours(-7);
       var totalDays = (endDate.Date - startDate.Date).Days + 1;
@@ -229,11 +232,14 @@ namespace AutoWash.Application.Services
         DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday
       };
 
+      // ISSUE-17 QA fix: khác với CreatedAt/CompletedAt (set bằng DateTime.UtcNow ở server),
+      // ScheduledTime là giờ hẹn do client gửi thẳng lên và đã là giờ VN thực địa — cộng thêm
+      // VietnamOffset ở đây làm khung giờ sáng bị đẩy lệch sang chiều (vd. 08:30 -> 15:30).
       var dayStats = dayOrder
           .Select(day => new DayOfWeekStatDto
           {
             DayOfWeek = day.ToString(),
-            BookingCount = bookings.Count(b => b.ScheduledTime.Add(VietnamOffset).DayOfWeek == day)
+            BookingCount = bookings.Count(b => b.ScheduledTime.DayOfWeek == day)
           })
           .ToList();
 
@@ -247,7 +253,7 @@ namespace AutoWash.Application.Services
         var next = current.Add(TimeSpan.FromMinutes(30));
         var count = bookings.Count(b =>
         {
-          var t = b.ScheduledTime.Add(VietnamOffset).TimeOfDay;
+          var t = b.ScheduledTime.TimeOfDay;
           return t >= current && t < next;
         });
 
