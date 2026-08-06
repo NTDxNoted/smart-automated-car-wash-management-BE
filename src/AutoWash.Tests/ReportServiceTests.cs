@@ -111,6 +111,58 @@ namespace AutoWash.Tests.Application.Services
     }
 
     [Fact]
+    public async Task GetPeakOccupancyReportAsync_ShouldPlaceCompletedBookingInItsScheduledHourSlot()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      // ScheduledTime là giờ hẹn client gửi lên (giờ VN thực địa) — không phải UTC — nên không được
+      // cộng thêm 7h khi xếp vào khung giờ, khác với CreatedAt/CompletedAt.
+      var scheduledTime = new DateTime(2026, 8, 4, 8, 30, 0);
+      db.Bookings.Add(new Booking
+      {
+        BookingID = 1,
+        CustomerID = 1,
+        ServiceID = 1,
+        Phone = "0901111111",
+        LicensePlate = "51A-111.11",
+        ScheduledTime = scheduledTime,
+        Status = BookingStatus.Completed,
+        FinalAmount = 100000m,
+        CreatedAt = scheduledTime
+      });
+      await db.SaveChangesAsync();
+
+      var requestedDay = new DateTime(2026, 8, 4);
+      var result = await service.GetPeakOccupancyReportAsync(requestedDay, requestedDay);
+
+      Assert.Equal(1, result.HourStats.Single(h => h.TimeSlot == "08:30").BookingCount);
+      Assert.Equal(0, result.HourStats.Single(h => h.TimeSlot == "15:30").BookingCount);
+    }
+
+    [Fact]
+    public async Task GetPeakOccupancyReportAsync_ShouldExcludeNonCompletedBookings()
+    {
+      using var db = CreateDbContext();
+      var service = new ReportService(db);
+
+      var scheduledTime = new DateTime(2026, 8, 4, 8, 30, 0);
+      db.Bookings.AddRange(
+          new Booking { BookingID = 1, CustomerID = 1, ServiceID = 1, Phone = "0901111111", LicensePlate = "51A-111.11", ScheduledTime = scheduledTime, Status = BookingStatus.Pending, FinalAmount = 100000m, CreatedAt = scheduledTime },
+          new Booking { BookingID = 2, CustomerID = 1, ServiceID = 1, Phone = "0901111112", LicensePlate = "51A-111.12", ScheduledTime = scheduledTime, Status = BookingStatus.Cancelled, FinalAmount = 100000m, CreatedAt = scheduledTime },
+          new Booking { BookingID = 3, CustomerID = 1, ServiceID = 1, Phone = "0901111113", LicensePlate = "51A-111.13", ScheduledTime = scheduledTime, Status = BookingStatus.NoShow, FinalAmount = 100000m, CreatedAt = scheduledTime },
+          new Booking { BookingID = 4, CustomerID = 1, ServiceID = 1, Phone = "0901111114", LicensePlate = "51A-111.14", ScheduledTime = scheduledTime, Status = BookingStatus.Failed, FinalAmount = 100000m, CreatedAt = scheduledTime }
+      );
+      await db.SaveChangesAsync();
+
+      var requestedDay = new DateTime(2026, 8, 4);
+      var result = await service.GetPeakOccupancyReportAsync(requestedDay, requestedDay);
+
+      Assert.Equal(0, result.HourStats.Sum(h => h.BookingCount));
+      Assert.Equal(0, result.DayOfWeekStats.Sum(d => d.BookingCount));
+    }
+
+    [Fact]
     public async Task GetPopularServicesReportAsync_ShouldMarkDeletedServiceInName()
     {
       using var db = CreateDbContext();
