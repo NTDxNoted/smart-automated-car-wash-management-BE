@@ -35,7 +35,11 @@ namespace AutoWash.Infrastructure.Jobs
                     var dbContext = scope.ServiceProvider
                         .GetRequiredService<IApplicationDbContext>();
 
-                    var cutoffTime = DateTime.UtcNow.AddMinutes(-15);
+                    // ISSUE-20: ScheduledTime là giờ hẹn client gửi lên (giờ VN thực địa), không phải
+                    // UTC — so cutoff trực tiếp với DateTime.UtcNow làm job trễ 7 tiếng (đơn 17:30 chỉ
+                    // bị đánh NoShow khi UTC chạm 17:45, tức 00:45 sáng hôm sau giờ VN).
+                    var nowVietnam = DateTime.UtcNow.AddHours(7);
+                    var cutoffTime = nowVietnam.AddMinutes(-15);
 
                     var overdueBookings = await dbContext.Bookings
                         .Where(b =>
