@@ -33,6 +33,7 @@ namespace AutoWash.Infrastructure.Data
         public DbSet<Transaction> Transactions { get; set; }
         public DbSet<Promotion> Promotions { get; set; }
         public DbSet<CustomerPromotion> CustomerPromotions { get; set; }
+        public DbSet<CustomerNotification> CustomerNotifications { get; set; }
         public DbSet<VwCustomerRfm> VwCustomerRfm { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
@@ -243,6 +244,26 @@ namespace AutoWash.Infrastructure.Data
 
                 entity.HasIndex(e => e.PromotionID);
                 entity.HasIndex(e => e.BookingID);
+            });
+
+            builder.Entity<CustomerNotification>(entity =>
+            {
+                entity.ToTable("customernotification");
+                entity.HasKey(e => e.ID);
+
+                entity.Property(e => e.ID).HasColumnName("id");
+                entity.Property(e => e.CustomerID).HasColumnName("customerid");
+                entity.Property(e => e.PromotionID).HasColumnName("promotionid");
+                entity.Property(e => e.Title).HasColumnName("title");
+                entity.Property(e => e.Message).HasColumnName("message");
+                entity.Property(e => e.PromoCode).HasColumnName("promocode");
+                entity.Property(e => e.DiscountValue).HasColumnName("discountvalue");
+                entity.Property(e => e.DiscountType).HasColumnName("discounttype");
+                entity.Property(e => e.IsRead).HasColumnName("isread");
+                entity.Property(e => e.CreatedAt).HasColumnName("createdat");
+                entity.Property(e => e.ExpiresAt).HasColumnName("expiresat");
+
+                entity.HasIndex(e => e.CustomerID);
             });
         }
     }

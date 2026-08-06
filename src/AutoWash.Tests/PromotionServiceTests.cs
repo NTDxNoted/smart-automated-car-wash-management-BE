@@ -1,7 +1,9 @@
 using Xunit;
 using Microsoft.EntityFrameworkCore;
 using AutoWash.Application.DTOs;
+using AutoWash.Application.DTOs.Admin;
 using AutoWash.Application.Services;
+using System.Linq;
 using AutoWash.Domain.Entities;
 using AutoWash.Domain.Enums;
 using AutoWash.Infrastructure.Data;
@@ -530,6 +532,150 @@ namespace AutoWash.Tests.Application.Services
             var result = await service.GetPromoUsageAsync(1);
 
             Assert.Equal(expectedStart.ToString("yyyy-MM-dd"), result.RangeStart);
+        }
+
+        [Fact]
+        public async Task DispatchRfmActionAsync_ShouldCreatePromoAndNotification_WhenPromoCodeDoesNotExist()
+        {
+            var dbContext = CreateDbContext();
+            var service = new PromotionService(dbContext);
+
+            dbContext.Customers.Add(new Customer { CustomerID = 1, FullName = "Champion Customer", TierID = 3 });
+            await dbContext.SaveChangesAsync();
+
+            var notification = await service.DispatchRfmActionAsync(new RfmActionRequest { CustomerId = 1, ActionType = "Champions" });
+
+            var promo = Assert.Single(dbContext.Promotions);
+            Assert.Equal("VIP20", promo.PromoCode);
+            Assert.Equal(20m, promo.DiscountValue);
+            Assert.Equal("Percentage", promo.DiscountType);
+
+            var storedNotification = Assert.Single(dbContext.CustomerNotifications);
+            Assert.Equal(1, storedNotification.CustomerID);
+            Assert.Equal("VIP20", storedNotification.PromoCode);
+            Assert.Equal(notification.ID, storedNotification.ID);
+        }
+
+        [Fact]
+        public async Task DispatchRfmActionAsync_ShouldReuseExistingPromo_WhenPromoCodeAlreadyExists()
+        {
+            var dbContext = CreateDbContext();
+            var service = new PromotionService(dbContext);
+
+            dbContext.Customers.Add(new Customer { CustomerID = 1, FullName = "Lost Customer", TierID = 1 });
+            dbContext.Promotions.Add(new Promotion
+            {
+                PromotionID = 1,
+                Title = "Existing win-back",
+                PromoCode = "WINBACK30",
+                DiscountType = "Percentage",
+                DiscountValue = 30m,
+                StartDate = DateTime.UtcNow.AddDays(-1),
+                EndDate = DateTime.UtcNow.AddYears(10),
+                IsActive = true
+            });
+            await dbContext.SaveChangesAsync();
+
+            await service.DispatchRfmActionAsync(new RfmActionRequest { CustomerId = 1, ActionType = "Lost Customers" });
+
+            Assert.Single(dbContext.Promotions);
+            var storedNotification = Assert.Single(dbContext.CustomerNotifications);
+            Assert.Equal(1, storedNotification.PromotionID);
+        }
+
+        [Fact]
+        public async Task DispatchRfmActionAsync_ShouldThrow_WhenCustomerNotFound()
+        {
+            var dbContext = CreateDbContext();
+            var service = new PromotionService(dbContext);
+
+            await Assert.ThrowsAsync<KeyNotFoundException>(
+                () => service.DispatchRfmActionAsync(new RfmActionRequest { CustomerId = 999, ActionType = "Champions" }));
+        }
+
+        [Fact]
+        public async Task CreatePromotionAsync_ShouldNotifyOnlyCustomersInTargetTierAndAbove()
+        {
+            var dbContext = CreateDbContext();
+            var service = new PromotionService(dbContext);
+
+            dbContext.Customers.AddRange(
+                new Customer { CustomerID = 1, FullName = "Member", TierID = 1 },
+                new Customer { CustomerID = 2, FullName = "Silver", TierID = 2 },
+                new Customer { CustomerID = 3, FullName = "Gold", TierID = 3 }
+            );
+            await dbContext.SaveChangesAsync();
+
+            await service.CreatePromotionAsync(new CreatePromoRequest
+            {
+                Title = "Gold+ Offer",
+                PromoCode = "GOLDPLUS",
+                MinTierID = 2,
+                DiscountType = "Percentage",
+                DiscountValue = 10m,
+                StartDate = DateTime.UtcNow,
+                EndDate = DateTime.UtcNow.AddDays(30),
+                IsActive = true,
+                MinOrderValue = 0m
+            });
+
+            var notifiedCustomerIds = dbContext.CustomerNotifications.Select(n => n.CustomerID).OrderBy(id => id).ToList();
+            Assert.Equal(new[] { 2, 3 }, notifiedCustomerIds);
+        }
+
+        [Fact]
+        public async Task CreatePromotionAsync_ShouldNotifyAllCustomers_WhenMinTierIdIsNull()
+        {
+            var dbContext = CreateDbContext();
+            var service = new PromotionService(dbContext);
+
+            dbContext.Customers.AddRange(
+                new Customer { CustomerID = 1, FullName = "Member", TierID = 1 },
+                new Customer { CustomerID = 2, FullName = "Silver", TierID = 2 }
+            );
+            await dbContext.SaveChangesAsync();
+
+            await service.CreatePromotionAsync(new CreatePromoRequest
+            {
+                Title = "All Tiers Offer",
+                PromoCode = "GLOBAL10",
+                MinTierID = null,
+                DiscountType = "Percentage",
+                DiscountValue = 10m,
+                StartDate = DateTime.UtcNow,
+                EndDate = DateTime.UtcNow.AddDays(30),
+                IsActive = true,
+                MinOrderValue = 0m
+            });
+
+            Assert.Equal(2, dbContext.CustomerNotifications.Count());
+        }
+
+        [Fact]
+        public async Task GetMyNotificationsAsync_ShouldReturnOnlyOwnUnexpiredNotifications_OrderedByNewestFirst()
+        {
+            var dbContext = CreateDbContext();
+            var service = new PromotionService(dbContext);
+
+            dbContext.Customers.AddRange(
+                new Customer { CustomerID = 1, FullName = "Me", TierID = 1 },
+                new Customer { CustomerID = 2, FullName = "Someone Else", TierID = 1 }
+            );
+            dbContext.CustomerNotifications.AddRange(
+                new CustomerNotification { CustomerID = 1, Title = "Old", Message = "old", PromoCode = "OLD10", CreatedAt = DateTime.UtcNow.AddDays(-2), ExpiresAt = DateTime.UtcNow.AddDays(5), IsRead = true },
+                new CustomerNotification { CustomerID = 1, Title = "New", Message = "new", PromoCode = "NEW10", CreatedAt = DateTime.UtcNow.AddDays(-1), ExpiresAt = DateTime.UtcNow.AddDays(5), IsRead = false },
+                new CustomerNotification { CustomerID = 1, Title = "Expired", Message = "expired", PromoCode = "EXP10", CreatedAt = DateTime.UtcNow.AddDays(-10), ExpiresAt = DateTime.UtcNow.AddDays(-1), IsRead = false },
+                new CustomerNotification { CustomerID = 2, Title = "Other", Message = "other", PromoCode = "OTHER10", CreatedAt = DateTime.UtcNow, ExpiresAt = null, IsRead = false }
+            );
+            await dbContext.SaveChangesAsync();
+
+            var result = await service.GetMyNotificationsAsync(1);
+
+            Assert.Equal(2, result.Count);
+            Assert.Equal("New", result[0].Name);
+            Assert.True(result[0].IsActive);
+            Assert.Equal("Old", result[1].Name);
+            Assert.False(result[1].IsActive);
         }
     }
 }

@@ -70,5 +70,18 @@ namespace AutoWashPro.API.Controllers
                 });
             }
         }
+
+        // GET /api/promotions/my-notifications
+        [HttpGet("my-notifications")]
+        public async Task<IActionResult> GetMyNotifications()
+        {
+            var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                        ?? User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
+
+            int? customerId = !string.IsNullOrEmpty(claim) && int.TryParse(claim, out int parsedId) ? parsedId : null;
+
+            var result = await _promotionService.GetMyNotificationsAsync(customerId);
+            return Ok(result);
+        }
     }
 }

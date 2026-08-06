@@ -1,4 +1,5 @@
 using AutoWash.Application.DTOs;
+using AutoWash.Application.DTOs.Admin;
 using AutoWash.Application.Interfaces;
 using AutoWash.Domain.Entities;
 using AutoWash.Domain.Enums;
@@ -137,7 +138,119 @@ namespace AutoWash.Application.Services
             _dbContext.Promotions.Add(promo);
             await _dbContext.SaveChangesAsync();
 
+            await BroadcastPromotionNotificationAsync(promo);
+
             return promo;
+        }
+
+        // ISSUE-19: khi tạo khuyến mãi mới, tự động phát thông báo cho khách hàng thuộc diện áp
+        // dụng — MinTierID != null thì chỉ khách từ hạng đó trở lên, null thì phát cho toàn bộ
+        // khách hàng (thay vì lọc "OR MinTierID == null" ở phía đọc, vốn làm lộ thông báo của
+        // khách này sang khách khác một khi đã có ít nhất 1 bản ghi cho promo đó).
+        private async Task BroadcastPromotionNotificationAsync(Promotion promo)
+        {
+            var targetCustomerIds = await (promo.MinTierID.HasValue
+                    ? _dbContext.Customers.Where(c => c.TierID >= promo.MinTierID.Value)
+                    : _dbContext.Customers)
+                .Select(c => c.CustomerID)
+                .ToListAsync();
+
+            if (targetCustomerIds.Count == 0)
+                return;
+
+            var createdAt = DateTime.UtcNow;
+            foreach (var customerId in targetCustomerIds)
+            {
+                _dbContext.CustomerNotifications.Add(new CustomerNotification
+                {
+                    CustomerID = customerId,
+                    PromotionID = promo.PromotionID,
+                    Title = "🎉 Ưu đãi mới dành cho bạn!",
+                    Message = $"{promo.Title} — dùng mã {promo.PromoCode} khi đặt lịch.",
+                    PromoCode = promo.PromoCode,
+                    DiscountValue = promo.DiscountValue,
+                    DiscountType = promo.DiscountType,
+                    CreatedAt = createdAt,
+                    ExpiresAt = promo.EndDate
+                });
+            }
+
+            await _dbContext.SaveChangesAsync();
+        }
+
+        public async Task<CustomerNotification> DispatchRfmActionAsync(RfmActionRequest request)
+        {
+            var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.CustomerID == request.CustomerId);
+            if (customer == null)
+                throw new KeyNotFoundException("CUSTOMER_NOT_FOUND");
+
+            var (promoCode, discountValue) = request.ActionType switch
+            {
+                "Lost Customers" => ("WINBACK30", 30m),
+                "New Customers" => ("WELCOME2ND", 10m),
+                "Inactive customer" => ("CARE10", 10m),
+                "Champions" => ("VIP20", 20m),
+                _ => ("DISCOUNT15", 15m)
+            };
+
+            var promo = await _dbContext.Promotions.FirstOrDefaultAsync(p => p.PromoCode.ToLower() == promoCode.ToLower());
+            if (promo == null)
+            {
+                promo = new Promotion
+                {
+                    Title = $"Ưu đãi chiến dịch {request.ActionType}",
+                    PromoCode = promoCode,
+                    DiscountType = "Percentage",
+                    DiscountValue = discountValue,
+                    StartDate = DateTime.UtcNow,
+                    EndDate = DateTime.UtcNow.AddYears(10),
+                    IsActive = true
+                };
+                _dbContext.Promotions.Add(promo);
+                await _dbContext.SaveChangesAsync();
+            }
+
+            var createdAt = DateTime.UtcNow;
+            var notification = new CustomerNotification
+            {
+                CustomerID = customer.CustomerID,
+                PromotionID = promo.PromotionID,
+                Title = "⚡ Quà tặng đặc biệt từ AutoWash Pro!",
+                Message = $"Nhận ngay mã {promo.PromoCode} giảm giá rửa xe khi đặt lịch tuần này.",
+                PromoCode = promo.PromoCode,
+                DiscountValue = promo.DiscountValue,
+                DiscountType = promo.DiscountType,
+                CreatedAt = createdAt,
+                ExpiresAt = createdAt.AddDays(7)
+            };
+            _dbContext.CustomerNotifications.Add(notification);
+            await _dbContext.SaveChangesAsync();
+
+            return notification;
+        }
+
+        public async Task<List<CustomerNotificationDto>> GetMyNotificationsAsync(int? customerId)
+        {
+            if (!customerId.HasValue || customerId.Value <= 0)
+                return new List<CustomerNotificationDto>();
+
+            var now = DateTime.UtcNow;
+            return await _dbContext.CustomerNotifications
+                .Where(n => n.CustomerID == customerId.Value && (n.ExpiresAt == null || n.ExpiresAt > now))
+                .OrderByDescending(n => n.CreatedAt)
+                .Select(n => new CustomerNotificationDto
+                {
+                    Id = n.ID,
+                    Name = n.Title,
+                    Description = n.Message,
+                    Code = n.PromoCode,
+                    DiscountValue = n.DiscountValue,
+                    DiscountType = n.DiscountType,
+                    CreatedAt = n.CreatedAt,
+                    ExpiresAt = n.ExpiresAt,
+                    IsActive = !n.IsRead
+                })
+                .ToListAsync();
         }
 
         public async Task<Promotion> UpdatePromotionAsync(int id, UpdatePromoRequest request)
