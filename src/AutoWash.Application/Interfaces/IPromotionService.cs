@@ -1,4 +1,5 @@
 using AutoWash.Application.DTOs;
+using AutoWash.Application.DTOs.Admin;
 using AutoWash.Domain.Entities;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -13,5 +14,7 @@ namespace AutoWash.Application.Interfaces
         Task<Promotion> UpdatePromotionAsync(int id, UpdatePromoRequest request);
         Task<Promotion> TogglePromoActiveAsync(int id);
         Task<PromoDetailResponse> GetPromoUsageAsync(int id);
+        Task<CustomerNotification> DispatchRfmActionAsync(RfmActionRequest request);
+        Task<List<CustomerNotificationDto>> GetMyNotificationsAsync(int? customerId);
     }
 }
