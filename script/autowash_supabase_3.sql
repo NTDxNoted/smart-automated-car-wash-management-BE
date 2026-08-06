@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS Transaction CASCADE;
 DROP TABLE IF EXISTS LoyaltyAccount CASCADE;
 DROP TABLE IF EXISTS PointTransaction CASCADE;
 DROP TABLE IF EXISTS CustomerPromotion CASCADE;
+DROP TABLE IF EXISTS CustomerNotification CASCADE;
 -- ── 1. Tier ─────────────────────────────────────────────
 CREATE TABLE Tier (
     TierID            SERIAL         PRIMARY KEY,
@@ -188,6 +189,25 @@ CREATE TABLE CustomerPromotion (
     CONSTRAINT fk_cp_booking  FOREIGN KEY (BookingID)   REFERENCES Booking(BookingID)     ON UPDATE CASCADE ON DELETE RESTRICT
 );
 
+-- ── 12. CustomerNotification ────────────────────────────
+CREATE TABLE CustomerNotification (
+    ID            SERIAL         PRIMARY KEY,
+    CustomerID    INT            NOT NULL,
+    PromotionID   INT            NULL DEFAULT NULL,
+    Title         VARCHAR(200)   NOT NULL,
+    Message       VARCHAR(500)   NOT NULL,
+    PromoCode     VARCHAR(20)    NOT NULL,
+    DiscountValue DECIMAL(10,2)  NULL DEFAULT NULL,
+    DiscountType  VARCHAR(20)    NULL DEFAULT NULL,
+    IsRead        BOOLEAN        NOT NULL DEFAULT FALSE,
+    CreatedAt     TIMESTAMP      NOT NULL DEFAULT NOW(),
+    ExpiresAt     TIMESTAMP      NULL DEFAULT NULL,
+    CONSTRAINT fk_cn_customer  FOREIGN KEY (CustomerID)  REFERENCES Customer(CustomerID)   ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_cn_promo     FOREIGN KEY (PromotionID) REFERENCES Promotion(PromotionID) ON UPDATE CASCADE ON DELETE SET NULL
+);
+
+CREATE INDEX idx_cn_customer ON CustomerNotification(CustomerID);
+
 
 
 -- ── View: RFM for ML ────────────────────────────────────
@@ -212,10 +232,11 @@ GROUP BY   c.CustomerID, c.FullName, c.Phone,
            la.TotalPoints, c.TotalSpending, c.CreatedAt;
 
 -- ============================================================
---  END — 11 Tables + 1 View
+--  END — 12 Tables + 1 View
 --  Tier, Customer, Vehicle, Service, Rewards_Catalog,
 --  Promotion, Booking, Transaction,
---  LoyaltyAccount, PointTransaction, CustomerPromotion
+--  LoyaltyAccount, PointTransaction, CustomerPromotion,
+--  CustomerNotification
 -- ============================================================
 
 -- ============================================================
