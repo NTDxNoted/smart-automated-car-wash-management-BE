@@ -424,7 +424,12 @@ namespace AutoWash.Application.Services
                 BaseAmount = baseAmount,
                 DiscountApplied = discountApplied,
                 FinalAmount = finalAmount,
-                PointsEarned = (int)Math.Max(0, Math.Floor(finalAmount / 10000m)),
+                // Guest đặt lịch không đăng nhập dùng chung tài khoản "Khách vãng lai" (Password ==
+                // "GUEST") không có loyalty tier thật — không tích điểm, khớp với PointService.EarnPointsAsync
+                // và AdminBookingService.CreateWalkInBookingAsync.
+                PointsEarned = customerId.HasValue
+                    ? (int)Math.Max(0, Math.Floor(finalAmount / 10000m))
+                    : 0,
                 PointsRedeemed = reward?.PointsRequired ?? 0,
                 CreatedAt = DateTime.UtcNow
             };
@@ -481,7 +486,7 @@ namespace AutoWash.Application.Services
             {
                 var occupiedCount = Math.Min(maxParallelSlots, overlapCount + 1);
                 var availableCount = Math.Max(0, maxParallelSlots - occupiedCount);
-                var slotLocal = newStart.AddHours(7);
+                var slotLocal = newStartUtc.AddHours(7);
                 await _bookingHubNotifier.NotifySlotOccupancyChangedAsync(
                     slotLocal.ToString("yyyy-MM-dd"),
                     slotLocal.ToString("HH:mm"),
@@ -812,7 +817,7 @@ namespace AutoWash.Application.Services
             var maxDateUtc = todayLocal.AddDays(windowDays).AddHours(24 - 7);
 
             var activeBookings = await _context.Bookings
-                .Where(b => (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.InProgress || b.Status == BookingStatus.Completed)
+                .Where(b => (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Completed)
                          && b.ScheduledTime >= minDateUtc
                          && b.ScheduledTime <= maxDateUtc)
                 .Select(b => new

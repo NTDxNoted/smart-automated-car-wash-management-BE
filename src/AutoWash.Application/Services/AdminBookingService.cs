@@ -228,7 +228,9 @@ namespace AutoWash.Application.Services
                 BaseAmount = service.Price,
                 DiscountApplied = 0,
                 FinalAmount = service.Price,
-                PointsEarned = (int)Math.Max(0, Math.Floor(service.Price / 10000m)),
+                // Khách vãng lai không tích điểm (không có tài khoản/loyalty tier thật) — xem thêm
+                // PointService.EarnPointsAsync, nơi việc cộng điểm cũng bị chặn cho các booking này.
+                PointsEarned = 0,
                 IsWalkIn = true,
                 CreatedAt = DateTime.UtcNow
             };

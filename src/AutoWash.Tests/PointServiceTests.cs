@@ -73,6 +73,54 @@ namespace AutoWash.Tests.Application.Services
     }
 
     [Fact]
+    public async Task EarnPointsAsync_WithWalkInCustomer_ShouldNotCreditPoints()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Customers.Add(new Customer
+      {
+        CustomerID = 1,
+        FullName = "Khách vãng lai",
+        Phone = "0901234567",
+        Password = "WALKIN",
+        Role = "GUEST",
+        CreatedAt = DateTime.UtcNow
+      });
+      dbContext.SaveChanges();
+      var booking = SeedBooking(dbContext, 250000m);
+      var service = CreateService(dbContext);
+
+      var points = await service.EarnPointsAsync(booking.BookingID);
+
+      Assert.Equal(0, points);
+      Assert.Equal(0, booking.PointsEarned);
+      Assert.False(await dbContext.LoyaltyAccounts.AnyAsync(l => l.CustomerID == booking.CustomerID));
+    }
+
+    [Fact]
+    public async Task EarnPointsAsync_WithAnonymousGuestCustomer_ShouldNotCreditPoints()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Customers.Add(new Customer
+      {
+        CustomerID = 1,
+        FullName = "Khách vãng lai",
+        Phone = "GUEST",
+        Password = "GUEST",
+        Role = "MEMBER",
+        CreatedAt = DateTime.UtcNow
+      });
+      dbContext.SaveChanges();
+      var booking = SeedBooking(dbContext, 250000m);
+      var service = CreateService(dbContext);
+
+      var points = await service.EarnPointsAsync(booking.BookingID);
+
+      Assert.Equal(0, points);
+      Assert.Equal(0, booking.PointsEarned);
+      Assert.False(await dbContext.LoyaltyAccounts.AnyAsync(l => l.CustomerID == booking.CustomerID));
+    }
+
+    [Fact]
     public async Task EarnPointsAsync_WithNonExistentBooking_ShouldReturnZero()
     {
       using var dbContext = CreateDbContext();
