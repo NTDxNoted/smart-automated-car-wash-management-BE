@@ -43,6 +43,9 @@ namespace AutoWashPro.API.Controllers
                 if (message.Contains("VEHICLE_BUFFER_VIOLATION"))
                     return StatusCode(422, new { error = "VEHICLE_BUFFER_VIOLATION", message });
 
+                if (message.Contains("VEHICLE_ALREADY_PENDING"))
+                    return StatusCode(422, new { error = "VEHICLE_ALREADY_PENDING", message });
+
                 if (message.Contains("ADVANCE_NOTICE_VIOLATION"))
                     return StatusCode(422, new { error = "ADVANCE_NOTICE_VIOLATION", message });
 

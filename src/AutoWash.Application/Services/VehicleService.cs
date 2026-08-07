@@ -7,6 +7,7 @@ using AutoWash.Application.Common.Validation;
 using AutoWash.Application.DTOs;
 using AutoWash.Application.Interfaces;
 using AutoWash.Domain.Entities;
+using AutoWash.Domain.Enums;
 
 namespace AutoWash.Application.Services
 {
@@ -29,7 +30,9 @@ namespace AutoWash.Application.Services
                     CustomerId = v.CustomerID,
                     LicensePlate = v.LicensePlate,
                     IsActive = v.IsActive,
-                    CreatedAt = v.CreatedAt
+                    CreatedAt = v.CreatedAt,
+                    HasPendingBooking = _context.Bookings.Any(b =>
+                        b.VehicleID == v.VehicleID && b.Status == BookingStatus.Pending)
                 })
                 .ToListAsync();
         }
