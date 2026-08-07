@@ -424,7 +424,12 @@ namespace AutoWash.Application.Services
                 BaseAmount = baseAmount,
                 DiscountApplied = discountApplied,
                 FinalAmount = finalAmount,
-                PointsEarned = (int)Math.Max(0, Math.Floor(finalAmount / 10000m)),
+                // Guest đặt lịch không đăng nhập dùng chung tài khoản "Khách vãng lai" (Password ==
+                // "GUEST") không có loyalty tier thật — không tích điểm, khớp với PointService.EarnPointsAsync
+                // và AdminBookingService.CreateWalkInBookingAsync.
+                PointsEarned = customerId.HasValue
+                    ? (int)Math.Max(0, Math.Floor(finalAmount / 10000m))
+                    : 0,
                 PointsRedeemed = reward?.PointsRequired ?? 0,
                 CreatedAt = DateTime.UtcNow
             };
