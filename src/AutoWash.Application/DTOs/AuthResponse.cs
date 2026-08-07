@@ -5,7 +5,6 @@ namespace AutoWash.Application.DTOs
     public int CustomerId { get; set; }
     public string FullName { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;
-    public string Email { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public string Tier { get; set; } = string.Empty;
     public string Token { get; set; } = string.Empty;
@@ -19,15 +18,8 @@ namespace AutoWash.Application.DTOs
     public int CustomerId { get; set; }
     public string FullName { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;
-    public string Email { get; set; } = string.Empty;
     public string Tier { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
-  }
-
-  public class LoginOtpRequiredResponse
-  {
-    public bool RequiresOtp { get; set; } = true;
-    public string MaskedEmail { get; set; } = string.Empty;
   }
 
   public class ErrorResponse

@@ -23,7 +23,6 @@ namespace AutoWash.Application.Services
         private readonly BookingSettings _bookingSettings;
         private readonly IAdminNotifier? _adminNotifier;
         private readonly IBookingHubNotifier? _bookingHubNotifier;
-        private readonly IGuestOtpService? _guestOtpService;
 
         public BookingService(
             IApplicationDbContext context,
@@ -61,8 +60,7 @@ namespace AutoWash.Application.Services
             IPointService? pointService,
             IOptions<BookingSettings> bookingSettings,
             IAdminNotifier? adminNotifier,
-            IBookingHubNotifier? bookingHubNotifier,
-            IGuestOtpService? guestOtpService = null)
+            IBookingHubNotifier? bookingHubNotifier)
         {
             _context = context;
             _logger = logger;
@@ -71,12 +69,6 @@ namespace AutoWash.Application.Services
             _bookingSettings = bookingSettings.Value;
             _adminNotifier = adminNotifier;
             _bookingHubNotifier = bookingHubNotifier;
-            _guestOtpService = guestOtpService;
-        }
-
-        private static bool IsValidEmail(string email)
-        {
-            return new System.ComponentModel.DataAnnotations.EmailAddressAttribute().IsValid(email);
         }
 
         // POST /api/Bookings
@@ -177,33 +169,8 @@ namespace AutoWash.Application.Services
                 if (!LicensePlateValidator.IsValid(request.LicensePlate))
                     throw new Exception("INVALID_LICENSE_PLATE: Biển số xe không đúng định dạng chuẩn Việt Nam (VD: 30F-123.45, 51F12345).");
 
-                if (string.IsNullOrWhiteSpace(request.FullName))
-                    throw new Exception("FULLNAME_REQUIRED: Guest phải nhập họ và tên.");
-
-                if (string.IsNullOrWhiteSpace(request.Email) || !IsValidEmail(request.Email))
-                    throw new Exception("EMAIL_REQUIRED: Guest phải nhập email hợp lệ.");
-
-                var guestEmail = request.Email.Trim().ToLowerInvariant();
-
-                // Không tin cờ "đã xác thực" do client tự khai — phải tự kiểm tra lại ở server.
-                if (_guestOtpService == null ||
-                    !await _guestOtpService.IsRecentlyVerifiedAsync(guestEmail, OtpPurpose.GuestBookingVerify))
-                    throw new Exception("EMAIL_NOT_VERIFIED: Email chưa được xác thực OTP.");
-
                 phone = request.Phone.Trim();
                 licensePlate = request.LicensePlate.Trim();
-
-                // BR mới: 1 email chỉ gắn với đúng 1 SĐT và ngược lại, tính trên toàn bộ lịch sử
-                // booking Guest (kể cả đã hủy) — tránh 1 email bị dùng lẫn lộn nhiều SĐT khác nhau.
-                var emailUsedWithOtherPhone = await _context.Bookings
-                    .AnyAsync(b => b.Email == guestEmail && b.Phone != phone);
-                if (emailUsedWithOtherPhone)
-                    throw new Exception("EMAIL_PHONE_MISMATCH: Email này đã được sử dụng với số điện thoại khác trước đó.");
-
-                var phoneUsedWithOtherEmail = await _context.Bookings
-                    .AnyAsync(b => b.Phone == phone && b.Email != null && b.Email != guestEmail);
-                if (phoneUsedWithOtherEmail)
-                    throw new Exception("EMAIL_PHONE_MISMATCH: Số điện thoại này đã được sử dụng với email khác trước đó.");
 
                 customer = await _context.Customers
                     .FirstOrDefaultAsync(c => c.Phone == "GUEST" && c.FullName == "Khách vãng lai");
@@ -442,8 +409,6 @@ namespace AutoWash.Application.Services
             {
                 CustomerID = effectiveCustomerId ?? 0,
                 Phone = phone,
-                Email = customerId.HasValue ? null : request.Email?.Trim().ToLowerInvariant(),
-                GuestFullName = customerId.HasValue ? null : request.FullName?.Trim(),
                 LicensePlate = licensePlate,
                 VehicleID = selectedVehicle!.VehicleID,
                 ServiceID = request.ServiceId,

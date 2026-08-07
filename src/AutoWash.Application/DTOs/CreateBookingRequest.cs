@@ -5,9 +5,6 @@ namespace AutoWash.Application.DTOs
   public class CreateBookingRequest
   {
     public string? Phone { get; set; }
-    // Guest only — bắt buộc và phải đã xác thực OTP (xem BookingService.CreateBookingAsync).
-    public string? FullName { get; set; }
-    public string? Email { get; set; }
     public string? LicensePlate { get; set; }
 
     public int? VehicleId { get; set; }

@@ -11,10 +11,6 @@ namespace AutoWash.Domain.Entities
         public int CustomerID { get; set; }
         public string FullName { get; set; } = string.Empty;
         public string Phone { get; set; } = string.Empty;
-        // Nullable: các tài khoản cũ (tạo trước tính năng OTP email) chưa có email trong DB.
-        public string? Email { get; set; }
-        public bool IsEmailVerified { get; set; }
-        public bool Is2FAEnabled { get; set; }
         public string Role { get; set; } = "MEMBER";
         [NotMapped]
         public string Tier { get; set; } = "1";
