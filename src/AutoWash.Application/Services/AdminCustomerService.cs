@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -37,8 +38,7 @@ namespace AutoWash.Application.Services
                 .OrderByDescending(c => c.CreatedAt)
                 .ToListAsync();
 
-            string ResolveTier(AutoWash.Domain.Entities.Customer c) =>
-                tierNames.TryGetValue(c.TierID, out var name) ? name : (c.TierID == 1 ? "Member" : c.TierID.ToString());
+            string ResolveTier(AutoWash.Domain.Entities.Customer c) => ResolveTierLabel(c, tierNames);
 
             if (!string.IsNullOrEmpty(tier))
             {
@@ -95,10 +95,7 @@ namespace AutoWash.Application.Services
             if (customer == null || customer.Role == "ADMIN")
                 throw new Exception("NOT_FOUND: Không tìm thấy hồ sơ khách hàng.");
 
-            var tierName = await _context.Tiers
-                .Where(t => t.TierID == customer.TierID)
-                .Select(t => t.TierName)
-                .FirstOrDefaultAsync();
+            var tierNames = await _context.Tiers.ToDictionaryAsync(t => t.TierID, t => t.TierName);
 
             var bookings = customer.Bookings.OrderByDescending(b => b.ScheduledTime).ToList();
             var serviceIds = bookings.Select(b => b.ServiceID).Distinct().ToList();
@@ -128,7 +125,7 @@ namespace AutoWash.Application.Services
                 CustomerId = customer.CustomerID,
                 FullName = customer.FullName,
                 Phone = customer.Phone,
-                Tier = tierName ?? (customer.TierID == 1 ? "Member" : customer.TierID.ToString()),
+                Tier = ResolveTierLabel(customer, tierNames),
                 Points = customer.LoyaltyAccount?.TotalPoints ?? 0,
                 TotalSpending = customer.TotalSpending,
                 IsLocked = customer.IsLocked,
@@ -200,17 +197,14 @@ namespace AutoWash.Application.Services
             customer.AdminNotes = notes;
             await _context.SaveChangesAsync();
 
-            var tierName = await _context.Tiers
-                .Where(t => t.TierID == customer.TierID)
-                .Select(t => t.TierName)
-                .FirstOrDefaultAsync();
+            var tierNames = await _context.Tiers.ToDictionaryAsync(t => t.TierID, t => t.TierName);
 
             return new CustomerAdminResponseDto
             {
                 CustomerId = customer.CustomerID,
                 FullName = customer.FullName,
                 Phone = customer.Phone,
-                Tier = tierName ?? (customer.TierID == 1 ? "Member" : customer.TierID.ToString()),
+                Tier = ResolveTierLabel(customer, tierNames),
                 TotalSpending = customer.TotalSpending,
                 IsLocked = customer.IsLocked,
                 SuspendedUntil = customer.SuspendedUntil,
@@ -219,6 +213,15 @@ namespace AutoWash.Application.Services
                 LastVisit = customer.LastVisit,
                 AdminNotes = customer.AdminNotes
             };
+        }
+
+        // Khách vãng lai lưu TierID=1 (Member) trong DB để không phá vỡ logic nâng/hạ hạng
+        // (TierService coi TierID=1 là sàn thấp nhất) — nhưng về bản chất họ không có tài khoản
+        // thật nên hiển thị "Guest" thay vì "Member" ở mọi nơi admin xem thông tin khách hàng.
+        private static string ResolveTierLabel(AutoWash.Domain.Entities.Customer c, Dictionary<int, string> tierNames)
+        {
+            if (c.Password == "WALKIN") return "Guest";
+            return tierNames.TryGetValue(c.TierID, out var name) ? name : (c.TierID == 1 ? "Member" : c.TierID.ToString());
         }
     }
 }
