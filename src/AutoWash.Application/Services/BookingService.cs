@@ -267,11 +267,12 @@ namespace AutoWash.Application.Services
                 b.LicensePlate == licensePlate &&
                 b.Status != BookingStatus.Cancelled &&
                 b.Status != BookingStatus.Failed &&
+                b.Status != BookingStatus.Completed &&
                 b.ScheduledTime >= bufferStart &&
                 b.ScheduledTime <= bufferEnd);
 
             if (vehicleBufferViolated)
-                throw new Exception("VEHICLE_BUFFER_VIOLATION: Biển số này đã có lịch hẹn trong vòng 120 phút.");
+                throw new Exception("VEHICLE_BUFFER_VIOLATION: Biển số xe này đã có đơn đặt lịch (Pending) trùng hoặc quá gần thời gian này.");
 
             var service = await _context.Services
                 .FirstOrDefaultAsync(s => s.ServiceID == request.ServiceId);
@@ -807,14 +808,15 @@ namespace AutoWash.Application.Services
             var maxDateUtc = todayLocal.AddDays(windowDays).AddHours(24 - 7);
 
             var activeBookings = await _context.Bookings
-                .Where(b => (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Completed)
+                .Where(b => (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.InProgress || b.Status == BookingStatus.Completed)
                          && b.ScheduledTime >= minDateUtc
                          && b.ScheduledTime <= maxDateUtc)
                 .Select(b => new
                 {
                     b.ScheduledTime,
                     Duration = _context.Services.Where(s => s.ServiceID == b.ServiceID).Select(s => s.Duration).FirstOrDefault(),
-                    b.LicensePlate
+                    b.LicensePlate,
+                    b.Status
                 })
                 .ToListAsync();
 
@@ -861,8 +863,8 @@ namespace AutoWash.Application.Services
                                 overlapCount++;
                             }
 
-                            // BR-28: Same license plate < 120 mins
-                            if (!string.IsNullOrEmpty(licensePlate) && !string.IsNullOrEmpty(b.LicensePlate))
+                            // BR-28: Same license plate < 120 mins (ONLY for active non-completed bookings)
+                            if (!string.IsNullOrEmpty(licensePlate) && !string.IsNullOrEmpty(b.LicensePlate) && b.Status != BookingStatus.Completed)
                             {
                                 if (b.LicensePlate.Equals(licensePlate, StringComparison.OrdinalIgnoreCase))
                                 {
