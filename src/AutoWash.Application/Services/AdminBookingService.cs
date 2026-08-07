@@ -4,12 +4,14 @@ using System.Linq;
 using System.Threading.Tasks;
 using AutoWash.Application.Common;
 using AutoWash.Application.Common.Validation;
+using AutoWash.Application.DTOs;
 using AutoWash.Application.DTOs.Admin;
 using AutoWash.Application.Interfaces;
 using AutoWash.Domain.Entities;
 using AutoWash.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace AutoWash.Application.Services
 {
@@ -20,15 +22,17 @@ namespace AutoWash.Application.Services
         private readonly IAdminNotifier? _adminNotifier;
         private readonly ITierService? _tierService;
         private readonly IPointService? _pointService;
+        private readonly BookingSettings _bookingSettings;
 
-        // adminNotifier/tierService/pointService có default null để các unit test cũ (chỉ truyền context + logger) không phải sửa.
-        public AdminBookingService(IApplicationDbContext context, ILogger<AdminBookingService> logger, IAdminNotifier? adminNotifier = null, ITierService? tierService = null, IPointService? pointService = null)
+        // adminNotifier/tierService/pointService/bookingSettings có default null để các unit test cũ (chỉ truyền context + logger) không phải sửa.
+        public AdminBookingService(IApplicationDbContext context, ILogger<AdminBookingService> logger, IAdminNotifier? adminNotifier = null, ITierService? tierService = null, IPointService? pointService = null, IOptions<BookingSettings>? bookingSettings = null)
         {
             _context = context;
             _logger = logger;
             _adminNotifier = adminNotifier;
             _tierService = tierService;
             _pointService = pointService;
+            _bookingSettings = bookingSettings?.Value ?? new BookingSettings();
         }
 
         public async Task<IEnumerable<AdminBookingListResponse>> GetAllBookingsAsync(string? status, string? date, string? phone, string? plate)
@@ -180,6 +184,38 @@ namespace AutoWash.Application.Services
 
             if (service.Price <= 0)
                 throw new Exception("SERVICE_PRICE_NOT_CONFIGURED: Dịch vụ này chưa được cấu hình đơn giá.");
+
+            // scheduledTime đã ở dạng UTC (Kind=Unspecified, xem comment phía trên) — chuẩn hoá tường minh
+            // để so sánh nhất quán với ScheduledTime đọc từ DB (Npgsql luôn trả Unspecified cho cột
+            // timestamp dù giá trị lưu là UTC).
+            var newStartUtc = DateTime.SpecifyKind(scheduledTime, DateTimeKind.Utc);
+
+            var minCheckUtc = newStartUtc.AddHours(-12);
+            var maxCheckUtc = newStartUtc.AddHours(12);
+
+            var activeBookings = await _context.Bookings
+                .Where(b => b.Status != BookingStatus.Cancelled && b.Status != BookingStatus.Failed && b.Status != BookingStatus.NoShow)
+                .Where(b => b.ScheduledTime >= minCheckUtc && b.ScheduledTime <= maxCheckUtc)
+                .Select(b => b.ScheduledTime)
+                .ToListAsync();
+
+            // Chỉ trừ đúng slot đã chọn — không tính thời lượng dịch vụ tràn qua slot kế tiếp.
+            int overlapCount = 0;
+            foreach (var bScheduledTime in activeBookings)
+            {
+                var bStartUtc = bScheduledTime.Kind == DateTimeKind.Unspecified
+                    ? DateTime.SpecifyKind(bScheduledTime, DateTimeKind.Utc)
+                    : bScheduledTime.ToUniversalTime();
+
+                if (bStartUtc == newStartUtc)
+                {
+                    overlapCount++;
+                }
+            }
+
+            int maxParallelSlots = _bookingSettings.MaxParallelSlots > 0 ? _bookingSettings.MaxParallelSlots : 1;
+            if (overlapCount >= maxParallelSlots)
+                throw new Exception("SLOT_NOT_AVAILABLE: Khung giờ này đã đầy (đạt giới hạn số lượng xe rửa song song).");
 
             var phone = request.Phone.Trim();
             var plate = request.Plate.Trim().ToUpperInvariant();
