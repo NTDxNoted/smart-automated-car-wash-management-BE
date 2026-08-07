@@ -12,10 +12,6 @@ namespace AutoWash.Application.DTOs
     [RegularExpression(@"^0[0-9]{9}$", ErrorMessage = "Số điện thoại không hợp lệ")]
     public string Phone { get; set; } = string.Empty;
 
-    [Required(ErrorMessage = "Email không được để trống")]
-    [EmailAddress(ErrorMessage = "Email không hợp lệ")]
-    public string Email { get; set; } = string.Empty;
-
     [Required(ErrorMessage = "Mật khẩu không được để trống")]
     [StringLength(255, MinimumLength = 6, ErrorMessage = "Mật khẩu phải từ 6 ký tự trở lên")]
     public string Password { get; set; } = string.Empty;

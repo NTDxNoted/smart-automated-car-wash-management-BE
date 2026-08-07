@@ -1,11 +1,8 @@
-using AutoWash.Application.Common;
 using AutoWash.Application.DTOs;
 using AutoWash.Application.Interfaces;
 using AutoWash.Domain.Entities;
-using AutoWash.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using System;
 using System.Collections.Generic;
@@ -21,18 +18,14 @@ namespace AutoWash.Application.Services
   {
     private readonly IApplicationDbContext _dbContext;
     private readonly IConfiguration _configuration;
-    private readonly IOtpService _otpService;
     private readonly IAdminNotifier? _adminNotifier;
-    private readonly ILogger<AuthService>? _logger;
 
-    // adminNotifier/logger default null để các unit test cũ (chỉ truyền dbContext + configuration + otpService) không phải sửa.
-    public AuthService(IApplicationDbContext dbContext, IConfiguration configuration, IOtpService otpService, IAdminNotifier? adminNotifier = null, ILogger<AuthService>? logger = null)
+    // adminNotifier default null để các unit test cũ (chỉ truyền dbContext + configuration) không phải sửa.
+    public AuthService(IApplicationDbContext dbContext, IConfiguration configuration, IAdminNotifier? adminNotifier = null)
     {
       _dbContext = dbContext;
       _configuration = configuration;
-      _otpService = otpService;
       _adminNotifier = adminNotifier;
-      _logger = logger;
     }
 
     public async Task<RegisterResponse> RegisterAsync(RegisterRequest request)
@@ -46,9 +39,6 @@ namespace AutoWash.Application.Services
       if (string.IsNullOrWhiteSpace(request.Phone))
         throw new ArgumentException("Số điện thoại không được để trống");
 
-      if (string.IsNullOrWhiteSpace(request.Email))
-        throw new ArgumentException("Email không được để trống");
-
       if (string.IsNullOrWhiteSpace(request.Password))
         throw new ArgumentException("Mật khẩu không được để trống");
 
@@ -57,18 +47,12 @@ namespace AutoWash.Application.Services
         throw new ArgumentException("Mật khẩu xác nhận không khớp");
 
       var phone = request.Phone.Trim();
-      var email = request.Email.Trim().ToLowerInvariant();
 
       var existingCustomer = await _dbContext.Customers
-          .FirstOrDefaultAsync(c => c.Phone == phone || c.Email == email);
+          .FirstOrDefaultAsync(c => c.Phone == phone);
 
       if (existingCustomer != null)
-      {
-        if (existingCustomer.Phone == phone)
-          throw new InvalidOperationException("PHONE_ALREADY_EXISTS");
-
-        throw new InvalidOperationException("EMAIL_ALREADY_EXISTS");
-      }
+        throw new InvalidOperationException("PHONE_ALREADY_EXISTS");
 
       var hashedPassword = BCrypt.Net.BCrypt.HashPassword(request.Password);
 
@@ -76,8 +60,6 @@ namespace AutoWash.Application.Services
       {
         FullName = request.FullName.Trim(),
         Phone = phone,
-        Email = email,
-        IsEmailVerified = false,
         Password = hashedPassword,
         Role = "MEMBER",
         IsLocked = false,
@@ -107,25 +89,11 @@ namespace AutoWash.Application.Services
         await _adminNotifier.NotifyNewCustomerAsync(customer.CustomerID, customer.FullName, customer.Phone);
       }
 
-      try
-      {
-        await _otpService.GenerateAndSendAsync(customer, OtpPurpose.RegisterVerify);
-      }
-      catch (Exception ex)
-      {
-        // Tài khoản đã được tạo thành công ở bước trên; gửi email chỉ là best-effort.
-        // Một lỗi SMTP tạm thời không được phép làm hỏng cả request đăng ký (khách sẽ
-        // không nhận được response thành công nhưng phone/email đã bị chiếm, không thể đăng ký lại).
-        // Khách có thể gọi resend-verification-email để thử gửi lại.
-        _logger?.LogWarning(ex, "Failed to send registration OTP email to {Email}", customer.Email);
-      }
-
       return new RegisterResponse
       {
         CustomerId = customer.CustomerID,
         FullName = customer.FullName,
         Phone = customer.Phone,
-        Email = customer.Email ?? string.Empty,
         Tier = customer.Tier,
         CreatedAt = customer.CreatedAt
       };
@@ -156,137 +124,6 @@ namespace AutoWash.Application.Services
       if (!BCrypt.Net.BCrypt.Verify(request.Password, customer.Password))
         throw new UnauthorizedAccessException("INVALID_CREDENTIALS");
 
-      if (!customer.IsEmailVerified)
-        throw new InvalidOperationException("EMAIL_NOT_VERIFIED");
-
-      if (customer.Is2FAEnabled)
-      {
-        await SendOtpOrThrowAsync(customer, OtpPurpose.Login2Fa);
-        throw new TwoFactorRequiredException(MaskEmail(customer.Email ?? string.Empty));
-      }
-
-      return await IssueAuthResponseAsync(customer);
-    }
-
-    public async Task<AuthResponse> VerifyLoginOtpAsync(VerifyLoginOtpRequest request)
-    {
-      if (request == null)
-        throw new ArgumentNullException(nameof(request));
-
-      var phone = (request.Phone ?? string.Empty).Trim();
-
-      var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.Phone == phone);
-      if (customer == null)
-        throw new InvalidOperationException("OTP_NOT_FOUND");
-
-      await _otpService.VerifyAsync(customer.CustomerID, OtpPurpose.Login2Fa, request.Code);
-
-      return await IssueAuthResponseAsync(customer);
-    }
-
-    public async Task VerifyEmailAsync(VerifyEmailRequest request)
-    {
-      if (request == null)
-        throw new ArgumentNullException(nameof(request));
-
-      var email = (request.Email ?? string.Empty).Trim().ToLowerInvariant();
-
-      var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.Email == email);
-      if (customer == null)
-        throw new InvalidOperationException("CUSTOMER_NOT_FOUND");
-
-      if (customer.IsEmailVerified)
-        return;
-
-      await _otpService.VerifyAsync(customer.CustomerID, OtpPurpose.RegisterVerify, request.Code);
-
-      customer.IsEmailVerified = true;
-      await _dbContext.SaveChangesAsync();
-    }
-
-    public async Task ResendVerificationEmailAsync(ResendOtpRequest request)
-    {
-      if (request == null)
-        throw new ArgumentNullException(nameof(request));
-
-      var email = (request.Email ?? string.Empty).Trim().ToLowerInvariant();
-
-      var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.Email == email);
-      if (customer == null)
-        throw new InvalidOperationException("CUSTOMER_NOT_FOUND");
-
-      if (customer.IsEmailVerified)
-        throw new InvalidOperationException("EMAIL_ALREADY_VERIFIED");
-
-      await SendOtpOrThrowAsync(customer, OtpPurpose.RegisterVerify);
-    }
-
-    public async Task ForgotPasswordAsync(ForgotPasswordRequest request)
-    {
-      if (request == null)
-        throw new ArgumentNullException(nameof(request));
-
-      var email = (request.Email ?? string.Empty).Trim().ToLowerInvariant();
-
-      var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.Email == email);
-      if (customer == null)
-        return; // Không tiết lộ email có tồn tại hay không.
-
-      await _otpService.GenerateAndSendAsync(customer, OtpPurpose.ResetPassword);
-    }
-
-    public async Task ResetPasswordAsync(ResetPasswordRequest request)
-    {
-      if (request == null)
-        throw new ArgumentNullException(nameof(request));
-
-      if (request.NewPassword != request.ConfirmNewPassword)
-        throw new ArgumentException("Mật khẩu xác nhận không khớp");
-
-      var email = (request.Email ?? string.Empty).Trim().ToLowerInvariant();
-
-      var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.Email == email);
-      if (customer == null)
-        throw new InvalidOperationException("OTP_NOT_FOUND");
-
-      await _otpService.VerifyAsync(customer.CustomerID, OtpPurpose.ResetPassword, request.Code);
-
-      customer.Password = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
-      customer.ActiveSessionId = null; // Buộc đăng nhập lại ở mọi phiên sau khi đổi mật khẩu.
-      await _dbContext.SaveChangesAsync();
-    }
-
-    public async Task SetTwoFactorEnabledAsync(int customerId, bool enable)
-    {
-      var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.CustomerID == customerId);
-      if (customer == null)
-        throw new InvalidOperationException("CUSTOMER_NOT_FOUND");
-
-      customer.Is2FAEnabled = enable;
-      await _dbContext.SaveChangesAsync();
-    }
-
-    // Bọc lỗi gửi email (SMTP...) thành một InvalidOperationException gọn gàng để controller trả về
-    // lỗi rõ ràng thay vì 500 chung chung — nhưng để nguyên OTP_COOLDOWN vì đó là lỗi nghiệp vụ có chủ đích.
-    private async Task SendOtpOrThrowAsync(Customer customer, OtpPurpose purpose)
-    {
-      try
-      {
-        await _otpService.GenerateAndSendAsync(customer, purpose);
-      }
-      catch (InvalidOperationException ex) when (ex.Message == "OTP_COOLDOWN")
-      {
-        throw;
-      }
-      catch (Exception ex)
-      {
-        _logger?.LogWarning(ex, "Failed to send OTP email to {Email} for {Purpose}", customer.Email, purpose);
-        throw new InvalidOperationException("OTP_SEND_FAILED");
-      }
-    }
-
-    private async Task<AuthResponse> IssueAuthResponseAsync(Customer customer)
-    {
       // Tier là [NotMapped] trên Customer nên phải resolve tên tier từ TierID mỗi lần load lại từ DB
       customer.Tier = await ResolveTierNameAsync(customer.TierID);
       customer.ActiveSessionId = Guid.NewGuid().ToString("N");
@@ -299,7 +136,6 @@ namespace AutoWash.Application.Services
         CustomerId = customer.CustomerID,
         FullName = customer.FullName,
         Phone = customer.Phone,
-        Email = customer.Email ?? string.Empty,
         Role = customer.Role,
         Tier = customer.Tier,
         Token = token,
@@ -307,19 +143,6 @@ namespace AutoWash.Application.Services
         SuspendedUntil = customer.SuspendedUntil,
         CreatedAt = customer.CreatedAt
       };
-    }
-
-    private static string MaskEmail(string email)
-    {
-      if (string.IsNullOrEmpty(email))
-        return email;
-
-      var atIndex = email.IndexOf('@');
-      if (atIndex <= 1)
-        return email;
-
-      var visible = email.Substring(0, 2);
-      return visible + new string('*', atIndex - 2) + email.Substring(atIndex);
     }
 
     // Customer.Tier là [NotMapped] — TierID mới là nguồn sự thật, cần resolve tên qua bảng Tiers.

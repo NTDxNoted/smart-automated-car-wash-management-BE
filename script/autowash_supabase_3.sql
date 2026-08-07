@@ -16,8 +16,6 @@ DROP TABLE IF EXISTS LoyaltyAccount CASCADE;
 DROP TABLE IF EXISTS PointTransaction CASCADE;
 DROP TABLE IF EXISTS CustomerPromotion CASCADE;
 DROP TABLE IF EXISTS CustomerNotification CASCADE;
-DROP TABLE IF EXISTS Email_Otp CASCADE;
-DROP TABLE IF EXISTS Guest_Email_Otp CASCADE;
 -- ── 1. Tier ─────────────────────────────────────────────
 CREATE TABLE Tier (
     TierID            SERIAL         PRIMARY KEY,
@@ -42,9 +40,6 @@ CREATE TABLE Customer (
     CustomerID    SERIAL         PRIMARY KEY,
     FullName      VARCHAR(100)   NOT NULL,
     Phone         VARCHAR(15)    NOT NULL UNIQUE,
-    Email         VARCHAR(255)   NOT NULL UNIQUE,
-    IsEmailVerified BOOLEAN      NOT NULL DEFAULT FALSE,
-    Is2FAEnabled  BOOLEAN        NOT NULL DEFAULT FALSE,
     Password      VARCHAR(255)   NOT NULL,
     Role          VARCHAR(20)    NOT NULL DEFAULT 'MEMBER' CHECK (Role IN ('MEMBER', 'ADMIN')),
     TierID        INT            NOT NULL DEFAULT 1,
@@ -113,8 +108,6 @@ CREATE TABLE Booking (
     BookingID       SERIAL         PRIMARY KEY,
     CustomerID      INT            NOT NULL,
     Phone           VARCHAR(15)    NOT NULL,
-    Email           VARCHAR(255)   NULL,
-    GuestFullName   VARCHAR(100)   NULL,
     VehicleID       INT            NOT NULL,
     LicensePlate    VARCHAR(20)    NOT NULL,
     ServiceID       INT            NOT NULL,
@@ -215,38 +208,6 @@ CREATE TABLE CustomerNotification (
 
 CREATE INDEX idx_cn_customer ON CustomerNotification(CustomerID);
 
--- ── 13. Email_Otp ───────────────────────────────────────
-CREATE TABLE Email_Otp (
-    OtpID       SERIAL         PRIMARY KEY,
-    CustomerID  INT            NOT NULL,
-    Email       VARCHAR(255)   NOT NULL,
-    Purpose     VARCHAR(30)    NOT NULL CHECK (Purpose IN ('RegisterVerify','ResetPassword','Login2Fa','SensitiveAction')),
-    CodeHash    VARCHAR(255)   NOT NULL,
-    Attempts    INT            NOT NULL DEFAULT 0,
-    IsUsed      BOOLEAN        NOT NULL DEFAULT FALSE,
-    ExpiresAt   TIMESTAMP      NOT NULL,
-    CreatedAt   TIMESTAMP      NOT NULL DEFAULT NOW(),
-    CONSTRAINT fk_otp_customer FOREIGN KEY (CustomerID) REFERENCES Customer(CustomerID)
-        ON UPDATE CASCADE ON DELETE CASCADE
-);
-
-CREATE INDEX idx_otp_customer_purpose ON Email_Otp(CustomerID, Purpose);
-
--- ── 14. Guest_Email_Otp ─────────────────────────────────
-CREATE TABLE Guest_Email_Otp (
-    OtpID       SERIAL         PRIMARY KEY,
-    Email       VARCHAR(255)   NOT NULL,
-    Purpose     VARCHAR(30)    NOT NULL CHECK (Purpose IN ('RegisterVerify','ResetPassword','Login2Fa','SensitiveAction','GuestBookingVerify')),
-    CodeHash    VARCHAR(255)   NOT NULL,
-    Attempts    INT            NOT NULL DEFAULT 0,
-    IsUsed      BOOLEAN        NOT NULL DEFAULT FALSE,
-    VerifiedAt  TIMESTAMP      NULL,
-    ExpiresAt   TIMESTAMP      NOT NULL,
-    CreatedAt   TIMESTAMP      NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_guest_otp_email_purpose ON Guest_Email_Otp(Email, Purpose);
-
 
 
 -- ── View: RFM for ML ────────────────────────────────────
@@ -271,11 +232,11 @@ GROUP BY   c.CustomerID, c.FullName, c.Phone,
            la.TotalPoints, c.TotalSpending, c.CreatedAt;
 
 -- ============================================================
---  END — 13 Tables + 1 View
+--  END — 12 Tables + 1 View
 --  Tier, Customer, Vehicle, Service, Rewards_Catalog,
 --  Promotion, Booking, Transaction,
 --  LoyaltyAccount, PointTransaction, CustomerPromotion,
---  CustomerNotification, Email_Otp
+--  CustomerNotification
 -- ============================================================
 
 -- ============================================================
