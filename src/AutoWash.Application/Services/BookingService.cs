@@ -193,6 +193,18 @@ namespace AutoWash.Application.Services
                 phone = request.Phone.Trim();
                 licensePlate = request.LicensePlate.Trim();
 
+                // BR mới: 1 email chỉ gắn với đúng 1 SĐT và ngược lại, tính trên toàn bộ lịch sử
+                // booking Guest (kể cả đã hủy) — tránh 1 email bị dùng lẫn lộn nhiều SĐT khác nhau.
+                var emailUsedWithOtherPhone = await _context.Bookings
+                    .AnyAsync(b => b.Email == guestEmail && b.Phone != phone);
+                if (emailUsedWithOtherPhone)
+                    throw new Exception("EMAIL_PHONE_MISMATCH: Email này đã được sử dụng với số điện thoại khác trước đó.");
+
+                var phoneUsedWithOtherEmail = await _context.Bookings
+                    .AnyAsync(b => b.Phone == phone && b.Email != null && b.Email != guestEmail);
+                if (phoneUsedWithOtherEmail)
+                    throw new Exception("EMAIL_PHONE_MISMATCH: Số điện thoại này đã được sử dụng với email khác trước đó.");
+
                 customer = await _context.Customers
                     .FirstOrDefaultAsync(c => c.Phone == "GUEST" && c.FullName == "Khách vãng lai");
 

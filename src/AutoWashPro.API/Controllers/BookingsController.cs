@@ -73,6 +73,9 @@ namespace AutoWashPro.API.Controllers
                 if (message.Contains("EMAIL_NOT_VERIFIED"))
                     return BadRequest(new { error = "EMAIL_NOT_VERIFIED", message });
 
+                if (message.Contains("EMAIL_PHONE_MISMATCH"))
+                    return BadRequest(new { error = "EMAIL_PHONE_MISMATCH", message });
+
                 return BadRequest(new
                 {
                     error = "BAD_REQUEST",
