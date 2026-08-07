@@ -297,7 +297,7 @@ namespace AutoWash.Application.Services
             using var bookingTransactionScope = bookingTransaction;
 
             var activeBookings = await _context.Bookings
-                .Where(b => b.Status != BookingStatus.Cancelled && b.Status != BookingStatus.Failed && b.Status != BookingStatus.NoShow)
+                .Where(b => b.Status != BookingStatus.Cancelled && b.Status != BookingStatus.Failed && b.Status != BookingStatus.NoShow && b.Status != BookingStatus.Completed)
                 .Where(b => b.ScheduledTime.Date == newStart.Date)
                 .Select(b => new
                 {
@@ -857,8 +857,8 @@ namespace AutoWash.Application.Services
                             var bStartLocal = b.ScheduledTime.Kind == DateTimeKind.Utc ? b.ScheduledTime.AddHours(7) : b.ScheduledTime;
                             var bEndLocal = bStartLocal.AddMinutes(b.Duration + 5);
 
-                            // Overlap
-                            if (slotLocal >= bStartLocal && slotLocal < bEndLocal)
+                            // Overlap (Only for active non-completed bookings)
+                            if (b.Status != BookingStatus.Completed && slotLocal >= bStartLocal && slotLocal < bEndLocal)
                             {
                                 overlapCount++;
                             }
