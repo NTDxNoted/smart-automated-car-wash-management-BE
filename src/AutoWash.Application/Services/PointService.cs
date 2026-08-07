@@ -28,6 +28,17 @@ namespace AutoWash.Application.Services
             var booking = await _context.Bookings.FindAsync(bookingId);
             if (booking == null) return 0;
 
+            // Khách vãng lai (Password == "WALKIN", tạo bởi AdminBookingService) và tài khoản Guest
+            // dùng chung cho booking công khai không đăng nhập (Password == "GUEST") không có tài
+            // khoản/loyalty tier thật — không cộng điểm tích lũy cho các booking gắn với 2 loại này.
+            var customer = await _context.Customers.FindAsync(booking.CustomerID);
+            if (customer != null && (customer.Password == "WALKIN" || customer.Password == "GUEST"))
+            {
+                booking.PointsEarned = 0;
+                await _context.SaveChangesAsync();
+                return 0;
+            }
+
             int calculatedPoints = (int)Math.Min(Math.Floor(booking.FinalAmount / 10000), 500);
             booking.PointsEarned = calculatedPoints;
 
