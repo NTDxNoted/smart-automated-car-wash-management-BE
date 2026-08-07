@@ -35,16 +35,16 @@ namespace AutoWash.Infrastructure.Jobs
                     var dbContext = scope.ServiceProvider
                         .GetRequiredService<IApplicationDbContext>();
 
-                    // ISSUE-20: ScheduledTime là giờ hẹn client gửi lên (giờ VN thực địa), không phải
-                    // UTC — so cutoff trực tiếp với DateTime.UtcNow làm job trễ 7 tiếng (đơn 17:30 chỉ
-                    // bị đánh NoShow khi UTC chạm 17:45, tức 00:45 sáng hôm sau giờ VN).
-                    var nowVietnam = DateTime.UtcNow.AddHours(7);
-                    var cutoffTime = nowVietnam.AddMinutes(-15);
+                    // BUG FIX (ISSUE-20 comment was wrong): ScheduledTime được lưu dưới dạng UTC, giống
+                    // mọi timestamp khác trong hệ thống (xem CreateBookingAsync/GetAvailableSlotsAsync) —
+                    // không phải giờ VN. So với nowVietnam (giờ VN) khiến cutoff bị lệch sớm ~7 tiếng,
+                    // đánh NoShow các booking Pending gần như ngay sau khi vừa tạo dù chưa tới giờ hẹn.
+                    var cutoffTimeUtc = DateTime.UtcNow.AddMinutes(-15);
 
                     var overdueBookings = await dbContext.Bookings
                         .Where(b =>
                             b.Status == BookingStatus.Pending &&
-                            b.ScheduledTime <= cutoffTime &&
+                            b.ScheduledTime <= cutoffTimeUtc &&
                             b.CheckInTime == null)
                         .ToListAsync(stoppingToken);
 
