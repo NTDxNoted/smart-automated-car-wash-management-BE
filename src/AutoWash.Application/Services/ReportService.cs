@@ -162,7 +162,9 @@ namespace AutoWash.Application.Services
       // Tier thật của khách là Customer.TierID (qua bảng Tiers, admin-configurable),
       // không phải suy ra từ điểm thưởng — 2 trục độc lập, xem CustomerService.GetProfileAsync.
       var tierNames = await _context.Tiers.ToDictionaryAsync(t => t.TierID, t => t.TierName);
-      var customers = await _context.Customers.ToListAsync();
+      // Customers table is shared with admin logins (see AdminCustomerService.GetCustomersAsync) —
+      // exclude them so this distribution matches the customer list total.
+      var customers = await _context.Customers.Where(c => c.Role != "ADMIN").ToListAsync();
 
       var totalCustomers = customers.Count;
       var distribution = customers
