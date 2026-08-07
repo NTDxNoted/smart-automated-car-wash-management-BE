@@ -275,6 +275,7 @@ namespace AutoWash.Application.Services
                 b.Status != BookingStatus.Cancelled &&
                 b.Status != BookingStatus.Failed &&
                 b.Status != BookingStatus.Completed &&
+                b.Status != BookingStatus.NoShow &&
                 b.ScheduledTime >= bufferStart &&
                 b.ScheduledTime <= bufferEnd);
 
@@ -290,7 +291,6 @@ namespace AutoWash.Application.Services
             var newStartUtc = request.ScheduledTime.Kind == DateTimeKind.Unspecified
                 ? DateTime.SpecifyKind(request.ScheduledTime, DateTimeKind.Utc)
                 : request.ScheduledTime.ToUniversalTime();
-            var newEndUtc = newStartUtc.AddMinutes(service.Duration + 5);
 
             // Fetch active bookings around requested time window in UTC
             var minCheckUtc = newStartUtc.AddHours(-12);
@@ -308,22 +308,19 @@ namespace AutoWash.Application.Services
             var activeBookings = await _context.Bookings
                 .Where(b => b.Status != BookingStatus.Cancelled && b.Status != BookingStatus.Failed && b.Status != BookingStatus.NoShow)
                 .Where(b => b.ScheduledTime >= minCheckUtc && b.ScheduledTime <= maxCheckUtc)
-                .Select(b => new
-                {
-                    b.ScheduledTime,
-                    Duration = _context.Services.Where(s => s.ServiceID == b.ServiceID).Select(s => s.Duration).FirstOrDefault()
-                })
+                .Select(b => b.ScheduledTime)
                 .ToListAsync();
 
+            // Chỉ trừ đúng slot giờ khách chọn — không tính thời lượng dịch vụ tràn qua slot kế
+            // tiếp nữa (bỏ theo yêu cầu, khác với trước đây dùng Duration+5 phút buffer).
             int overlapCount = 0;
-            foreach (var b in activeBookings)
+            foreach (var bScheduledTime in activeBookings)
             {
-                var bStartUtc = b.ScheduledTime.Kind == DateTimeKind.Unspecified
-                    ? DateTime.SpecifyKind(b.ScheduledTime, DateTimeKind.Utc)
-                    : b.ScheduledTime.ToUniversalTime();
-                var bEndUtc = bStartUtc.AddMinutes(b.Duration + 5);
+                var bStartUtc = bScheduledTime.Kind == DateTimeKind.Unspecified
+                    ? DateTime.SpecifyKind(bScheduledTime, DateTimeKind.Utc)
+                    : bScheduledTime.ToUniversalTime();
 
-                if (bStartUtc < newEndUtc && newStartUtc < bEndUtc)
+                if (bStartUtc == newStartUtc)
                 {
                     overlapCount++;
                 }
@@ -684,28 +681,16 @@ namespace AutoWash.Application.Services
             // cho toàn bộ client đang xem trang đặt lịch.
             if (_bookingHubNotifier != null)
             {
-                var slotService = await _context.Services.FirstOrDefaultAsync(s => s.ServiceID == booking.ServiceID);
-                var duration = slotService?.Duration ?? 0;
                 var slotStart = booking.ScheduledTime;
-                var slotEnd = slotStart.AddMinutes(duration + 5);
 
                 var activeBookings = await _context.Bookings
                     .Where(b => b.Status != BookingStatus.Cancelled && b.Status != BookingStatus.Failed && b.Status != BookingStatus.NoShow)
                     .Where(b => b.ScheduledTime.Date == slotStart.Date)
-                    .Select(b => new
-                    {
-                        b.ScheduledTime,
-                        Duration = _context.Services.Where(s => s.ServiceID == b.ServiceID).Select(s => s.Duration).FirstOrDefault()
-                    })
+                    .Select(b => b.ScheduledTime)
                     .ToListAsync();
 
-                int overlapCount = 0;
-                foreach (var b in activeBookings)
-                {
-                    var bStart = b.ScheduledTime;
-                    var bEnd = bStart.AddMinutes(b.Duration + 5);
-                    if (bStart < slotEnd && slotStart < bEnd) overlapCount++;
-                }
+                // Chỉ trừ đúng slot đã chọn — không tính thời lượng dịch vụ tràn qua slot kế tiếp.
+                int overlapCount = activeBookings.Count(bStart => bStart == slotStart);
 
                 int maxParallelSlots = _bookingSettings.MaxParallelSlots > 0 ? _bookingSettings.MaxParallelSlots : 1;
                 var availableCount = Math.Max(0, maxParallelSlots - overlapCount);
@@ -830,7 +815,6 @@ namespace AutoWash.Application.Services
                 .Select(b => new
                 {
                     b.ScheduledTime,
-                    Duration = _context.Services.Where(s => s.ServiceID == b.ServiceID).Select(s => s.Duration).FirstOrDefault(),
                     b.LicensePlate,
                     b.Status
                 })
@@ -865,16 +849,20 @@ namespace AutoWash.Application.Services
 
                         foreach (var b in activeBookings)
                         {
-                            // BUG FIX: b.ScheduledTime được lưu dưới dạng UTC (giống mọi nơi khác
-                            // trong hệ thống), nhưng biến này bị gắn nhãn "Local" mà không cộng offset
-                            // +7h — khiến so sánh với slotLocal (giờ VN thật) bị lệch 7 tiếng, làm slot
-                            // đã đặt hiển thị nhầm là còn trống (và một slot khác, không ai đặt, lại bị
-                            // đánh dấu nhầm là đầy).
-                            var bStartLocal = b.ScheduledTime.Kind == DateTimeKind.Utc ? b.ScheduledTime.AddHours(7) : b.ScheduledTime;
-                            var bEndLocal = bStartLocal.AddMinutes(b.Duration + 5);
+                            // BUG FIX: Npgsql/EF trả DateTime đọc từ cột timestamp luôn với
+                            // Kind=Unspecified (không phải Utc), dù giá trị lưu trong DB thực chất là
+                            // UTC (giống mọi nơi khác trong hệ thống — xem CreateBookingAsync). Check
+                            // "Kind == Utc" cũ do đó gần như không bao giờ đúng, khiến +7h không được
+                            // cộng và slot đã có booking Pending/Completed bị so sánh lệch giờ, hiển thị
+                            // nhầm là còn trống.
+                            var bStartUtc = b.ScheduledTime.Kind == DateTimeKind.Unspecified
+                                ? DateTime.SpecifyKind(b.ScheduledTime, DateTimeKind.Utc)
+                                : b.ScheduledTime.ToUniversalTime();
+                            var bStartLocal = bStartUtc.AddHours(7);
 
-                            // Overlap
-                            if (slotLocal >= bStartLocal && slotLocal < bEndLocal)
+                            // Chỉ trừ đúng slot khách đã chọn — không tính thời lượng dịch vụ tràn qua
+                            // slot kế tiếp nữa (bỏ theo yêu cầu, khác với trước đây dùng Duration+5 phút buffer).
+                            if (slotLocal == bStartLocal)
                             {
                                 overlapCount++;
                             }
