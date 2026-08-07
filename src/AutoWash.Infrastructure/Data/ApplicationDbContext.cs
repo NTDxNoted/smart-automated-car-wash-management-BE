@@ -35,6 +35,8 @@ namespace AutoWash.Infrastructure.Data
         public DbSet<CustomerPromotion> CustomerPromotions { get; set; }
         public DbSet<CustomerNotification> CustomerNotifications { get; set; }
         public DbSet<VwCustomerRfm> VwCustomerRfm { get; set; }
+        public DbSet<EmailOtp> EmailOtps { get; set; }
+        public DbSet<GuestEmailOtp> GuestEmailOtps { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -63,6 +65,9 @@ namespace AutoWash.Infrastructure.Data
                 entity.Property(e => e.CustomerID).HasColumnName("customerid");
                 entity.Property(e => e.FullName).HasColumnName("fullname");
                 entity.Property(e => e.Phone).HasColumnName("phone");
+                entity.Property(e => e.Email).HasColumnName("email");
+                entity.Property(e => e.IsEmailVerified).HasColumnName("isemailverified");
+                entity.Property(e => e.Is2FAEnabled).HasColumnName("is2faenabled");
                 entity.Property(e => e.Password).HasColumnName("password");
                 entity.Property(e => e.Role).HasColumnName("role");
                 entity.Property(e => e.TierID).HasColumnName("tierid");
@@ -74,6 +79,43 @@ namespace AutoWash.Infrastructure.Data
                 entity.Property(e => e.CreatedAt).HasColumnName("createdat");
 
                 entity.HasIndex(e => e.Phone).IsUnique();
+                entity.HasIndex(e => e.Email).IsUnique();
+            });
+
+            builder.Entity<EmailOtp>(entity =>
+            {
+                entity.ToTable("email_otp");
+                entity.HasKey(e => e.OtpID);
+
+                entity.Property(e => e.OtpID).HasColumnName("otpid");
+                entity.Property(e => e.CustomerID).HasColumnName("customerid");
+                entity.Property(e => e.Email).HasColumnName("email");
+                entity.Property(e => e.Purpose).HasColumnName("purpose").HasConversion<string>();
+                entity.Property(e => e.CodeHash).HasColumnName("codehash");
+                entity.Property(e => e.Attempts).HasColumnName("attempts");
+                entity.Property(e => e.IsUsed).HasColumnName("isused");
+                entity.Property(e => e.ExpiresAt).HasColumnName("expiresat");
+                entity.Property(e => e.CreatedAt).HasColumnName("createdat");
+
+                entity.HasIndex(e => new { e.CustomerID, e.Purpose });
+            });
+
+            builder.Entity<GuestEmailOtp>(entity =>
+            {
+                entity.ToTable("guest_email_otp");
+                entity.HasKey(e => e.OtpID);
+
+                entity.Property(e => e.OtpID).HasColumnName("otpid");
+                entity.Property(e => e.Email).HasColumnName("email");
+                entity.Property(e => e.Purpose).HasColumnName("purpose").HasConversion<string>();
+                entity.Property(e => e.CodeHash).HasColumnName("codehash");
+                entity.Property(e => e.Attempts).HasColumnName("attempts");
+                entity.Property(e => e.IsUsed).HasColumnName("isused");
+                entity.Property(e => e.VerifiedAt).HasColumnName("verifiedat");
+                entity.Property(e => e.ExpiresAt).HasColumnName("expiresat");
+                entity.Property(e => e.CreatedAt).HasColumnName("createdat");
+
+                entity.HasIndex(e => new { e.Email, e.Purpose });
             });
 
             builder.Entity<VwCustomerRfm>(entity =>
@@ -128,6 +170,8 @@ namespace AutoWash.Infrastructure.Data
                 entity.Property(e => e.BookingID).HasColumnName("bookingid");
                 entity.Property(e => e.CustomerID).HasColumnName("customerid");
                 entity.Property(e => e.Phone).HasColumnName("phone");
+                entity.Property(e => e.Email).HasColumnName("email");
+                entity.Property(e => e.GuestFullName).HasColumnName("guestfullname");
                 entity.Property(e => e.VehicleID).HasColumnName("vehicleid");
                 entity.Property(e => e.LicensePlate).HasColumnName("licenseplate");
                 entity.Property(e => e.ServiceID).HasColumnName("serviceid");

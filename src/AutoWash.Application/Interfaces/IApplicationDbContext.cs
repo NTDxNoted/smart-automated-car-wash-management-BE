@@ -28,6 +28,8 @@ namespace AutoWash.Application.Interfaces
         DbSet<CustomerPromotion> CustomerPromotions { get; set; }
         DbSet<CustomerNotification> CustomerNotifications { get; set; }
         DbSet<VwCustomerRfm> VwCustomerRfm { get; set; }
+        DbSet<EmailOtp> EmailOtps { get; set; }
+        DbSet<GuestEmailOtp> GuestEmailOtps { get; set; }
         Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     }
 }

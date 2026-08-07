@@ -24,6 +24,15 @@ builder.Services.AddControllers()
     });
 builder.Services.Configure<AutoWash.Application.DTOs.BookingSettings>(builder.Configuration.GetSection("BookingSettings"));
 
+// Email OTP: SenderEmail/AppPassword ưu tiên lấy từ biến môi trường (giống JWT_SECRET_KEY), không commit thật vào appsettings.json.
+builder.Services.Configure<AutoWash.Application.DTOs.EmailSettings>(builder.Configuration.GetSection("Email"));
+builder.Services.PostConfigure<AutoWash.Application.DTOs.EmailSettings>(settings =>
+{
+    settings.SenderEmail = Environment.GetEnvironmentVariable("EMAIL_SENDER") ?? settings.SenderEmail;
+    settings.AppPassword = Environment.GetEnvironmentVariable("EMAIL_APP_PASSWORD") ?? settings.AppPassword;
+});
+builder.Services.Configure<AutoWash.Application.DTOs.OtpSettings>(builder.Configuration.GetSection("Otp"));
+
 // CORS — cho phép frontend dev server gọi API
 builder.Services.AddCors(options =>
 {
@@ -90,6 +99,12 @@ builder.Services.AddSignalR();
 builder.Services.AddScoped<IAdminNotifier, SignalRAdminNotifier>();
 // BookingHub: đẩy cập nhật số chỗ trống theo thời gian thực cho trang đặt lịch (public, cả Guest lẫn Member).
 builder.Services.AddScoped<IBookingHubNotifier, SignalRBookingHubNotifier>();
+
+// Email OTP: xác thực đăng ký, quên mật khẩu, 2FA đăng nhập
+builder.Services.AddScoped<IEmailService, AutoWash.Infrastructure.Services.EmailService>();
+builder.Services.AddScoped<IOtpService, OtpService>();
+// Guest booking email OTP: xác thực email trước khi đặt lịch (không cần tài khoản)
+builder.Services.AddScoped<IGuestOtpService, GuestOtpService>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAdminAuthService, AdminAuthService>();

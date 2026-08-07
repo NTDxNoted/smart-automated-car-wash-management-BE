@@ -1,9 +1,10 @@
 ﻿using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using AutoWash.Application.DTOs;
 using AutoWash.Application.Interfaces;
-using AutoWash.Application.DTOs;
+using AutoWash.Domain.Enums;
 
 namespace AutoWashPro.API.Controllers
 {
@@ -12,10 +13,12 @@ namespace AutoWashPro.API.Controllers
     public class BookingsController : ControllerBase
     {
         private readonly IBookingsService _bookingsService;
+        private readonly IGuestOtpService _guestOtpService;
 
-        public BookingsController(IBookingsService bookingsService)
+        public BookingsController(IBookingsService bookingsService, IGuestOtpService guestOtpService)
         {
             _bookingsService = bookingsService;
+            _guestOtpService = guestOtpService;
         }
 
         // 1. POST /api/Bookings
@@ -60,6 +63,15 @@ namespace AutoWashPro.API.Controllers
 
                 if (message.Contains("LICENSE_PLATE_REQUIRED"))
                     return BadRequest(new { error = "LICENSE_PLATE_REQUIRED", message });
+
+                if (message.Contains("FULLNAME_REQUIRED"))
+                    return BadRequest(new { error = "FULLNAME_REQUIRED", message });
+
+                if (message.Contains("EMAIL_REQUIRED"))
+                    return BadRequest(new { error = "EMAIL_REQUIRED", message });
+
+                if (message.Contains("EMAIL_NOT_VERIFIED"))
+                    return BadRequest(new { error = "EMAIL_NOT_VERIFIED", message });
 
                 return BadRequest(new
                 {
@@ -214,6 +226,71 @@ namespace AutoWashPro.API.Controllers
                     message = ex.Message
                 });
             }
+        }
+
+        // 7. POST /api/bookings/guest-email-otp/request — Guest xác thực email trước khi đặt lịch (BR mới)
+        [HttpPost("guest-email-otp/request")]
+        public async Task<IActionResult> RequestGuestEmailOtp([FromBody] RequestGuestEmailOtpRequest request)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(BuildValidationError());
+
+            try
+            {
+                await _guestOtpService.GenerateAndSendAsync(request.Email, OtpPurpose.GuestBookingVerify);
+                return Ok(new { message = "Mã OTP đã được gửi đến email của bạn." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(MapGuestOtpError(ex.Message));
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, new { error = "INTERNAL_SERVER_ERROR", message = "Đã có lỗi xảy ra, vui lòng thử lại sau." });
+            }
+        }
+
+        // 8. POST /api/bookings/guest-email-otp/verify
+        [HttpPost("guest-email-otp/verify")]
+        public async Task<IActionResult> VerifyGuestEmailOtp([FromBody] VerifyGuestEmailOtpRequest request)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(BuildValidationError());
+
+            try
+            {
+                await _guestOtpService.VerifyAsync(request.Email, OtpPurpose.GuestBookingVerify, request.Code);
+                return Ok(new { message = "Email đã được xác thực thành công." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(MapGuestOtpError(ex.Message));
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, new { error = "INTERNAL_SERVER_ERROR", message = "Đã có lỗi xảy ra, vui lòng thử lại sau." });
+            }
+        }
+
+        private object BuildValidationError()
+        {
+            var errors = ModelState.Values.SelectMany(v => v.Errors);
+            return new { error = "VALIDATION_FAILED", message = string.Join("; ", errors.Select(e => e.ErrorMessage)) };
+        }
+
+        private static object MapGuestOtpError(string code)
+        {
+            var message = code switch
+            {
+                "OTP_NOT_FOUND" => "Không tìm thấy mã OTP, vui lòng yêu cầu gửi lại",
+                "OTP_EXPIRED" => "Mã OTP đã hết hạn, vui lòng yêu cầu gửi lại",
+                "OTP_LOCKED" => "Bạn đã nhập sai quá số lần cho phép, vui lòng yêu cầu gửi lại mã",
+                "OTP_INVALID" => "Mã OTP không đúng",
+                "OTP_COOLDOWN" => "Vui lòng đợi một chút trước khi yêu cầu gửi lại mã",
+                _ => "Đã có lỗi xảy ra, vui lòng thử lại sau."
+            };
+
+            return new { error = code, message };
         }
     }
 }
