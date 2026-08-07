@@ -174,9 +174,14 @@ namespace AutoWash.Application.Services
                 throw new Exception("FORBIDDEN: Không thể khóa/mở khóa tài khoản Admin qua API quản lý khách hàng.");
 
             customer.IsLocked = !customer.IsLocked;
+
+            // Ân xá: mở khóa (IsLocked -> false) phải xóa luôn hạn phạt SuspendedUntil (gán tự động
+            // bởi AutoNoShowJob khi no-show >= 3 lần/30 ngày), nếu không CreateBookingAsync vẫn chặn
+            // đặt lịch với SUSPENDED_ACCOUNT dù Admin đã mở khóa.
+            if (!customer.IsLocked)
+                customer.SuspendedUntil = null;
+
             await _context.SaveChangesAsync();
-
-
 
             return new LockCustomerResponseDto
             {
