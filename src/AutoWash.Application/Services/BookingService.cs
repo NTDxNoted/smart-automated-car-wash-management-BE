@@ -280,25 +280,27 @@ namespace AutoWash.Application.Services
             if (service == null)
                 throw new Exception("SERVICE_NOT_FOUND: Không tìm thấy dịch vụ.");
 
-            var newStart = request.ScheduledTime;
-            var newEnd = newStart.AddMinutes(service.Duration + 5);
+            var newStartUtc = request.ScheduledTime.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(request.ScheduledTime, DateTimeKind.Utc)
+                : request.ScheduledTime.ToUniversalTime();
+            var newEndUtc = newStartUtc.AddMinutes(service.Duration + 5);
 
-            // TOCTOU: nếu 2 request đặt cùng slot đọc overlapCount đồng thời (trước khi request nào insert
-            // xong), cả hai có thể cùng pass check bên dưới và cùng insert, vượt MaxParallelSlots. Khóa
-            // advisory theo ngày (AcquireBookingDateLockAsync — chỉ có tác dụng trên Postgres) để chỉ 1
-            // request tạo booking cho ngày đó được xử lý tại một thời điểm; lock tự giải phóng khi
-            // transaction kết thúc (commit/rollback/dispose).
+            // Fetch active bookings around requested time window in UTC
+            var minCheckUtc = newStartUtc.AddHours(-12);
+            var maxCheckUtc = newStartUtc.AddHours(12);
+
+            // Advisory lock to prevent race conditions for same date
             IDbContextTransaction? bookingTransaction = null;
             if (_context is DbContext dbContextForLock)
             {
                 bookingTransaction = await dbContextForLock.Database.BeginTransactionAsync();
-                await _context.AcquireBookingDateLockAsync(newStart.Date);
+                await _context.AcquireBookingDateLockAsync(newStartUtc.Date);
             }
             using var bookingTransactionScope = bookingTransaction;
 
             var activeBookings = await _context.Bookings
                 .Where(b => b.Status != BookingStatus.Cancelled && b.Status != BookingStatus.Failed && b.Status != BookingStatus.NoShow)
-                .Where(b => b.ScheduledTime.Date == newStart.Date)
+                .Where(b => b.ScheduledTime >= minCheckUtc && b.ScheduledTime <= maxCheckUtc)
                 .Select(b => new
                 {
                     b.ScheduledTime,
@@ -309,10 +311,12 @@ namespace AutoWash.Application.Services
             int overlapCount = 0;
             foreach (var b in activeBookings)
             {
-                var bStart = b.ScheduledTime;
-                var bEnd = bStart.AddMinutes(b.Duration + 5);
+                var bStartUtc = b.ScheduledTime.Kind == DateTimeKind.Unspecified
+                    ? DateTime.SpecifyKind(b.ScheduledTime, DateTimeKind.Utc)
+                    : b.ScheduledTime.ToUniversalTime();
+                var bEndUtc = bStartUtc.AddMinutes(b.Duration + 5);
 
-                if (bStart < newEnd && newStart < bEnd)
+                if (bStartUtc < newEndUtc && newStartUtc < bEndUtc)
                 {
                     overlapCount++;
                 }
