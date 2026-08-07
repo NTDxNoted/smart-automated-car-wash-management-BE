@@ -121,7 +121,14 @@ namespace AutoWash.Application.Services
  
                     if (selectedVehicle == null)
                         throw new Exception("VEHICLE_NOT_FOUND: Không tìm thấy xe của khách hàng.");
- 
+
+                    bool vehicleAlreadyPending = await _context.Bookings.AnyAsync(b =>
+                        b.VehicleID == selectedVehicle.VehicleID &&
+                        b.Status == BookingStatus.Pending);
+
+                    if (vehicleAlreadyPending)
+                        throw new Exception("VEHICLE_ALREADY_PENDING: Xe này đã có một lịch hẹn đang chờ xử lý, vui lòng chọn xe khác hoặc chờ lịch hẹn hiện tại hoàn tất.");
+
                     licensePlate = selectedVehicle.LicensePlate;
                 }
                 else if (!string.IsNullOrWhiteSpace(request.LicensePlate))

@@ -9,5 +9,6 @@ namespace AutoWash.Application.DTOs
         public string LicensePlate { get; set; } = string.Empty;
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }
+        public bool HasPendingBooking { get; set; }
     }
 }
