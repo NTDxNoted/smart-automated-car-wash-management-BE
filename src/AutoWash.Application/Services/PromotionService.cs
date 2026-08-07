@@ -287,6 +287,13 @@ namespace AutoWash.Application.Services
 
             await _dbContext.SaveChangesAsync();
 
+            // Khi mã đang active (kể cả vừa được bật lại qua update), phát thông báo cho khách
+            // hàng để họ biết về thông tin/thời hạn mới nhất của mã.
+            if (promo.IsActive)
+            {
+                await BroadcastPromotionNotificationAsync(promo);
+            }
+
             return promo;
         }
 
@@ -300,6 +307,12 @@ namespace AutoWash.Application.Services
 
             promo.IsActive = !promo.IsActive;
             await _dbContext.SaveChangesAsync();
+
+            // Kích hoạt lại từ Inactive -> Active: phát thông báo cho khách hàng như khi tạo mới.
+            if (promo.IsActive)
+            {
+                await BroadcastPromotionNotificationAsync(promo);
+            }
 
             return promo;
         }
