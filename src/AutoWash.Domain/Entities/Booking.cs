@@ -8,6 +8,9 @@ namespace AutoWash.Domain.Entities
         public int BookingID { get; set; }
         public int CustomerID { get; set; }
         public string Phone { get; set; } = string.Empty;
+        // Chỉ set cho Guest booking (đã xác thực OTP) — Member đã có email trên tài khoản riêng.
+        public string? Email { get; set; }
+        public string? GuestFullName { get; set; }
         public int VehicleID { get; set; }
         public string LicensePlate { get; set; } = string.Empty;
         public int ServiceID { get; set; }

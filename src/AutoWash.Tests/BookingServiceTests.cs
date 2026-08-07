@@ -27,6 +27,15 @@ namespace AutoWash.Tests.Application.Services
       return new ApplicationDbContext(options);
     }
 
+    // Guest booking giờ bắt buộc email đã xác thực OTP (không tin cờ do client tự khai) —
+    // mock này giả lập "đã xác thực" cho các test không tập trung kiểm tra chính bản thân bước OTP.
+    private static IGuestOtpService CreateVerifiedGuestOtpService()
+    {
+      var mock = new Mock<IGuestOtpService>();
+      mock.Setup(x => x.IsRecentlyVerifiedAsync(It.IsAny<string>(), It.IsAny<OtpPurpose>())).ReturnsAsync(true);
+      return mock.Object;
+    }
+
     [Fact]
     public async Task CreateBookingAsync_WithMemberTier_ShouldReturnInvoiceAndServiceDetails()
     {
@@ -120,12 +129,15 @@ namespace AutoWash.Tests.Application.Services
 
       var logger = Mock.Of<ILogger<BookingService>>();
       var tierService = Mock.Of<ITierService>();
-      var service = new BookingService(dbContext, logger, tierService);
+      var options = Options.Create(new BookingSettings());
+      var service = new BookingService(dbContext, logger, tierService, null, options, null, null, CreateVerifiedGuestOtpService());
 
       var request = new CreateBookingRequest
       {
         ServiceId = 1,
         Phone = "0909999888",
+        FullName = "Nguyễn Văn Khách",
+        Email = "guest@example.com",
         LicensePlate = "51Z-999.88",
         ScheduledTime = DateTime.UtcNow.AddHours(2),
         PromoCode = null,
@@ -138,6 +150,175 @@ namespace AutoWash.Tests.Application.Services
       Assert.True(result.BookingId > 0);
       Assert.True(await dbContext.Customers.AnyAsync(c => c.Phone == "GUEST" && c.FullName == "Khách vãng lai"));
       Assert.True(await dbContext.Bookings.AnyAsync(b => b.BookingID == result.BookingId && b.CustomerID > 0));
+
+      var savedBooking = await dbContext.Bookings.FirstAsync(b => b.BookingID == result.BookingId);
+      Assert.Equal("guest@example.com", savedBooking.Email);
+      Assert.Equal("Nguyễn Văn Khách", savedBooking.GuestFullName);
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_AsGuestWithoutFullName_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa xe cơ bản", ServiceCategory = "Basic", Price = 80000, Duration = 20, Status = "Active" });
+      await dbContext.SaveChangesAsync();
+
+      var options = Options.Create(new BookingSettings());
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>(), null, options, null, null, CreateVerifiedGuestOtpService());
+      var request = new CreateBookingRequest
+      {
+        ServiceId = 1,
+        Phone = "0909999888",
+        Email = "guest@example.com",
+        LicensePlate = "51Z-999.88",
+        ScheduledTime = DateTime.UtcNow.AddHours(2)
+      };
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CreateBookingAsync(request, null));
+
+      Assert.StartsWith("FULLNAME_REQUIRED", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_AsGuestWithUnverifiedEmail_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa xe cơ bản", ServiceCategory = "Basic", Price = 80000, Duration = 20, Status = "Active" });
+      await dbContext.SaveChangesAsync();
+
+      var unverifiedOtpMock = new Mock<IGuestOtpService>();
+      unverifiedOtpMock.Setup(x => x.IsRecentlyVerifiedAsync(It.IsAny<string>(), It.IsAny<OtpPurpose>())).ReturnsAsync(false);
+
+      var options = Options.Create(new BookingSettings());
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>(), null, options, null, null, unverifiedOtpMock.Object);
+      var request = new CreateBookingRequest
+      {
+        ServiceId = 1,
+        Phone = "0909999888",
+        FullName = "Nguyễn Văn Khách",
+        Email = "guest@example.com",
+        LicensePlate = "51Z-999.88",
+        ScheduledTime = DateTime.UtcNow.AddHours(2)
+      };
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CreateBookingAsync(request, null));
+
+      Assert.StartsWith("EMAIL_NOT_VERIFIED", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_AsGuestWithEmailAlreadyTiedToOtherPhone_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa xe cơ bản", ServiceCategory = "Basic", Price = 80000, Duration = 20, Status = "Active" });
+      // Booking cũ: email này đã từng đi cùng SĐT khác (kể cả đã hủy vẫn tính).
+      dbContext.Bookings.Add(new Booking
+      {
+        CustomerID = 999,
+        Phone = "0900000001",
+        Email = "guest@example.com",
+        GuestFullName = "Ai đó",
+        VehicleID = 1,
+        LicensePlate = "51Z-000.01",
+        ServiceID = 1,
+        ScheduledTime = DateTime.UtcNow.AddHours(1),
+        Status = BookingStatus.Cancelled,
+        BaseAmount = 80000,
+        FinalAmount = 80000
+      });
+      await dbContext.SaveChangesAsync();
+
+      var options = Options.Create(new BookingSettings());
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>(), null, options, null, null, CreateVerifiedGuestOtpService());
+      var request = new CreateBookingRequest
+      {
+        ServiceId = 1,
+        Phone = "0900000002", // SĐT khác
+        FullName = "Nguyễn Văn Khách",
+        Email = "guest@example.com", // cùng email
+        LicensePlate = "51Z-999.88",
+        ScheduledTime = DateTime.UtcNow.AddHours(2)
+      };
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CreateBookingAsync(request, null));
+
+      Assert.StartsWith("EMAIL_PHONE_MISMATCH", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_AsGuestWithPhoneAlreadyTiedToOtherEmail_ShouldThrow()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa xe cơ bản", ServiceCategory = "Basic", Price = 80000, Duration = 20, Status = "Active" });
+      dbContext.Bookings.Add(new Booking
+      {
+        CustomerID = 999,
+        Phone = "0900000003",
+        Email = "old@example.com",
+        GuestFullName = "Ai đó",
+        VehicleID = 1,
+        LicensePlate = "51Z-000.02",
+        ServiceID = 1,
+        ScheduledTime = DateTime.UtcNow.AddHours(1),
+        Status = BookingStatus.Completed,
+        BaseAmount = 80000,
+        FinalAmount = 80000
+      });
+      await dbContext.SaveChangesAsync();
+
+      var options = Options.Create(new BookingSettings());
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>(), null, options, null, null, CreateVerifiedGuestOtpService());
+      var request = new CreateBookingRequest
+      {
+        ServiceId = 1,
+        Phone = "0900000003", // cùng SĐT
+        FullName = "Nguyễn Văn Khách",
+        Email = "new@example.com", // email khác
+        LicensePlate = "51Z-999.88",
+        ScheduledTime = DateTime.UtcNow.AddHours(2)
+      };
+
+      var ex = await Assert.ThrowsAsync<Exception>(() => service.CreateBookingAsync(request, null));
+
+      Assert.StartsWith("EMAIL_PHONE_MISMATCH", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_AsGuestWithSameEmailAndSamePhoneAsBefore_ShouldSucceed()
+    {
+      using var dbContext = CreateDbContext();
+      dbContext.Services.Add(new Service { ServiceID = 1, ServiceName = "Rửa xe cơ bản", ServiceCategory = "Basic", Price = 80000, Duration = 20, Status = "Active" });
+      dbContext.Bookings.Add(new Booking
+      {
+        CustomerID = 999,
+        Phone = "0900000004",
+        Email = "repeat@example.com",
+        GuestFullName = "Ai đó",
+        VehicleID = 1,
+        LicensePlate = "51Z-000.03",
+        ServiceID = 1,
+        ScheduledTime = DateTime.UtcNow.AddHours(1),
+        Status = BookingStatus.Completed,
+        BaseAmount = 80000,
+        FinalAmount = 80000
+      });
+      await dbContext.SaveChangesAsync();
+
+      var options = Options.Create(new BookingSettings());
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>(), null, options, null, null, CreateVerifiedGuestOtpService());
+      var request = new CreateBookingRequest
+      {
+        ServiceId = 1,
+        Phone = "0900000004", // cùng SĐT như lần trước
+        FullName = "Nguyễn Văn Khách",
+        Email = "repeat@example.com", // cùng email như lần trước
+        LicensePlate = "51Z-999.88",
+        ScheduledTime = DateTime.UtcNow.AddHours(2)
+      };
+
+      var result = await service.CreateBookingAsync(request, null);
+
+      Assert.True(result.BookingId > 0);
     }
 
     [Fact]
@@ -600,10 +781,10 @@ namespace AutoWash.Tests.Application.Services
 
       var hubMock = new Mock<IBookingHubNotifier>();
       var options = Options.Create(new BookingSettings { MaxParallelSlots = 2, PriorityBufferSlots = 0 });
-      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>(), null, options, null, hubMock.Object);
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>(), null, options, null, hubMock.Object, CreateVerifiedGuestOtpService());
 
       var scheduledTime = DateTime.UtcNow.AddHours(3);
-      var request = new CreateBookingRequest { ServiceId = 1, Phone = "0909999888", LicensePlate = "51Z-999.88", ScheduledTime = scheduledTime };
+      var request = new CreateBookingRequest { ServiceId = 1, Phone = "0909999888", FullName = "Guest User", Email = "guest@example.com", LicensePlate = "51Z-999.88", ScheduledTime = scheduledTime };
 
       await service.CreateBookingAsync(request, null);
 
@@ -624,10 +805,10 @@ namespace AutoWash.Tests.Application.Services
 
       var hubMock = new Mock<IBookingHubNotifier>();
       var options = Options.Create(new BookingSettings { MaxParallelSlots = 1, PriorityBufferSlots = 0 });
-      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>(), null, options, null, hubMock.Object);
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>(), null, options, null, hubMock.Object, CreateVerifiedGuestOtpService());
 
       var scheduledTime = DateTime.UtcNow.AddHours(3);
-      var request = new CreateBookingRequest { ServiceId = 1, Phone = "0909999888", LicensePlate = "51Z-999.88", ScheduledTime = scheduledTime };
+      var request = new CreateBookingRequest { ServiceId = 1, Phone = "0909999888", FullName = "Guest User", Email = "guest@example.com", LicensePlate = "51Z-999.88", ScheduledTime = scheduledTime };
 
       await service.CreateBookingAsync(request, null);
 
@@ -644,10 +825,10 @@ namespace AutoWash.Tests.Application.Services
 
       var hubMock = new Mock<IBookingHubNotifier>();
       var options = Options.Create(new BookingSettings { MaxParallelSlots = 1, PriorityBufferSlots = 0 });
-      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>(), null, options, null, hubMock.Object);
+      var service = new BookingService(dbContext, Mock.Of<ILogger<BookingService>>(), Mock.Of<ITierService>(), null, options, null, hubMock.Object, CreateVerifiedGuestOtpService());
 
       var scheduledTime = DateTime.UtcNow.AddHours(3);
-      var request = new CreateBookingRequest { ServiceId = 1, Phone = "0909999888", LicensePlate = "51Z-999.88", ScheduledTime = scheduledTime };
+      var request = new CreateBookingRequest { ServiceId = 1, Phone = "0909999888", FullName = "Guest User", Email = "guest@example.com", LicensePlate = "51Z-999.88", ScheduledTime = scheduledTime };
       var created = await service.CreateBookingAsync(request, null);
 
       await service.CancelBookingAsync(created.BookingId, null, "0909999888");

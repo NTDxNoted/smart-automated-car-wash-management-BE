@@ -192,7 +192,7 @@ namespace AutoWash.Application.Services
                     FullName = request.CustomerName.Trim(),
                     Phone = phone,
                     Password = "WALKIN",
-                    Role = "MEMBER",
+                    Role = "GUEST",
                     TierID = 1,
                     CreatedAt = DateTime.UtcNow
                 };
